@@ -57,6 +57,10 @@ Run `scripts/check-deps.sh` to re-verify at any time.
   path (C-009), not optional for proving the pipe.
 - Headless launch recipe (for CI / socket tests):
   `SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy hatari --sound off --tos <rom>`
+- **Pipe proven end to end (2026-07-09):** with EmuTOS booting, a raw TCP client
+  connected to `127.0.0.1:56001`, received the `!connected|1007` handshake, and
+  read live beam counters via `regs` (HBL/LineCycles/FrameCycles/VBL). See
+  `protocol/b1-protocol.md`. This is the M0 pipe (minus the Qt client + framebuffer).
 
 ## TOS decision (C-009)
 

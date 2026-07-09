@@ -17,8 +17,22 @@ truth: `src/debug/remotedebug.c`.
   Hatari can detect a version mismatch. History: 0x1003 reset cmds, 0x1004 ffwd,
   0x1005 memfind + stramsize, 0x1006 hex-only addr/size, 0x1007 savebin.
   The session manager (F-214) must check this and degrade/refuse on mismatch.
-- Token terminator `SEPARATOR_VAL = 0x1` (below ASCII 32 so 32–255 are data).
-  Responses are `OK` / `NG` then separator-delimited tokens then a terminator.
+- **Framing (verified on the wire 2026-07-09):** tokens are separated by
+  `SEPARATOR_VAL = 0x1`; every message ends with a `0x0` terminator (both
+  directions — commands sent to Hatari are also `0x0`-terminated).
+  Command replies begin `OK` (or `NG` + hex error code) then `0x1`-separated
+  tokens then `0x0`.
+- **Connect handshake (verified):** on `accept()` Hatari immediately pushes,
+  unprompted:
+  - `!connected` `0x1` `1007` — the protocol id (`0x1007`); check for mismatch.
+  - `!config` `0x1` `<machineType>` `0x1` `<?>` `0x1` `<stramsize>` — e.g.
+    `!config|0|0|100000` = ST, 1 MB.
+  - `!status` `0x1` `<running>` `0x1` `<PC>` `0x1` `<ffwd>` — e.g.
+    `!status|1|E0EE10|0`.
+  Async **notifications are prefixed `!`** (`!connected`, `!config`, `!status`)
+  and are pushed on state changes (break hit, config/reset, ffwd) as well as at
+  connect — distinct from `OK`/`NG` command replies. F-214 must handle both an
+  unsolicited `!`-stream and request/reply interleaved on the same socket.
 
 ## Command set (the 21 B1 verbs)
 
@@ -80,9 +94,24 @@ the canonical beam-position accessor. The B2 beam/border tap (ARCHITECTURE §3)
 should hang off the same internal state this reads, so B1 and B2 report identical
 positions (consistency, C-007).
 
+## Empirically verified end to end (2026-07-09)
+
+Booted the fork with EmuTOS 1.4 (`tos/etos512uk.img`), connected a raw TCP client
+to `127.0.0.1:56001`, and exercised the pipe:
+
+- Connect greeting arrived exactly as above (`!connected|1007`, `!config|0|0|100000`,
+  `!status|1|E0EE10|0`), PC in the `$E0xxxx` EmuTOS ROM range.
+- `regs\0` returned **49 key/value pairs** — CPU registers plus the video
+  variables. Beam state read live: `HBL=198` (scanline), `LineCycles=46`
+  (cycle-in-line), `FrameCycles=101422`, `VBL=293`, `CycleCounter=46950710`.
+
+This confirms, on the wire and not just in source, that the beam-position overlay
+and register-write-to-cycle mapping are achievable in pure B1 (D-005).
+
 ## Still to read before writing the client parser
 
-- Exact token layout of each response (`regs`, `mem`, `status`, `$config`
-  notification) — field order and encoding, handler by handler.
-- The asynchronous **notifications** (`NotifyConfig` / `NotifyStatus`): when
-  Hatari pushes state unprompted (break hit, config, ffwd status) vs. request/reply.
+- Exact token layout of `mem` / `memset` / `bp` responses (not yet exercised).
+- Arg encoding for commands that take arguments (how `RemoteDebug_Parse` splits
+  multi-arg commands — `regs` is arg-free; `mem <addr> <count>` is the next to try).
+- Confirm the middle field of `!config` (currently `0` for ST + 1 MB) and the
+  trailing `!status` field (ffwd flag).
