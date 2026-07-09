@@ -1,0 +1,40 @@
+# --- Build output ---
+/build/
+/client/build/
+/harness/build/
+build-*/
+*.o
+*.obj
+*.so
+*.a
+*.exe
+
+# --- Qt / CMake generated ---
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.cmake.tmp
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.autosave
+.qt/
+
+# --- The Hatari fork (cloned by scripts/bootstrap-hatari.sh, never vendored) ---
+# GPLv2 upstream lives here; we track only our B2 patch series under patches/.
+/external/
+
+# --- User-supplied ROMs (copyright — never commit; see C-009) ---
+/tos/*
+!/tos/README.md
+
+# --- Editor / OS cruft ---
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# --- Local, machine-specific config ---
+/.talos.local
+compile_commands.json
