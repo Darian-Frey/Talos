@@ -1,31 +1,108 @@
-// Talos — Qt6 client entry point.
+// Talos — Qt6 client entry point (M0).
 //
-// PRE-M0 SCAFFOLD. This opens a placeholder window only, to prove the Qt6
-// toolchain and the CMake wiring. It contains no Talos behaviour yet.
-//
-// The M0 target (ROADMAP Phase 0 exit criterion) replaces this with a client
-// that: connects to the Hatari fork over the remote socket, reads registers +
-// VBL/HBL/cycle counters, issues run/stop/step, and displays Hatari's taken
-// framebuffer (D-007). Build that up under the session/ protocol/ model/ view/
-// directories rather than inflating this file.
+// Connects to the patched Hatari fork over the remote-debug socket, reads
+// registers + VBL/HBL/cycle counters, drives run/stop/step, and displays
+// Hatari's taken framebuffer (D-007). See app/MainWindow.
+
+#include "app/MainWindow.h"
 
 #include <QApplication>
-#include <QLabel>
+#include <QCommandLineParser>
+#include <QDebug>
+#include <QDir>
+#include <QFileInfo>
+#include <QImage>
+#include <QTimer>
+
+namespace {
+
+// Best-effort default for the fork binary and TOS, relative to the repo. Real
+// deployments pass --hatari/--tos explicitly.
+QString guessRepoRelative(const QString &rel)
+{
+    // Try CWD, then a couple of ancestors (running from build/ dirs).
+    QDir dir(QDir::currentPath());
+    for (int i = 0; i < 4; ++i) {
+        const QString candidate = dir.filePath(rel);
+        if (QFileInfo::exists(candidate))
+            return QFileInfo(candidate).absoluteFilePath();
+        if (!dir.cdUp())
+            break;
+    }
+    return rel;
+}
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     QApplication::setApplicationName("Talos");
-    QApplication::setApplicationVersion("0.0.0");
+    QApplication::setApplicationVersion("0.0.0-M0");
 
-    QLabel window(QStringLiteral(
-        "Talos — pre-M0 scaffold\n\n"
-        "The client does not connect to Hatari yet.\n"
-        "Next: session manager + remote-protocol client (M0)."));
-    window.setAlignment(Qt::AlignCenter);
-    window.setMinimumSize(480, 240);
-    window.setWindowTitle(QStringLiteral("Talos"));
+    QCommandLineParser parser;
+    parser.setApplicationDescription(
+        "Talos — Atari ST/STE hardware visualiser (drives a patched Hatari).");
+    parser.addHelpOption();
+    parser.addVersionOption();
+
+    const QCommandLineOption optHatari(
+        "hatari", "Path to the patched Hatari binary.", "path",
+        qEnvironmentVariable("TALOS_HATARI",
+                             guessRepoRelative("external/hatari/build/src/hatari")));
+    const QCommandLineOption optTos(
+        "tos", "Path to a TOS/EmuTOS ROM image.", "path",
+        qEnvironmentVariable("TALOS_TOS", guessRepoRelative("tos/etos512uk.img")));
+    const QCommandLineOption optMachine("machine", "Machine: st|ste|megast|megaste.",
+                                        "type", "st");
+    const QCommandLineOption optHeadless("headless",
+                                         "Run Hatari off-screen (no Hatari window).");
+    const QCommandLineOption optAttach(
+        "attach", "Attach to an already-running Hatari instead of launching one.");
+    const QCommandLineOption optHost("host", "Remote host to connect to.", "host",
+                                     "127.0.0.1");
+    const QCommandLineOption optSelftest(
+        "selftest",
+        "Headless CI check: auto-start, step, save one taken frame to <png>, exit.",
+        "png");
+    parser.addOptions(
+        {optHatari, optTos, optMachine, optHeadless, optAttach, optHost, optSelftest});
+    parser.process(app);
+
+    MainWindow::Config cfg;
+    cfg.attachOnly = parser.isSet(optAttach);
+    cfg.host = parser.value(optHost);
+    cfg.hatari.hatariBinary = parser.value(optHatari);
+    cfg.hatari.tosImage = parser.value(optTos);
+    cfg.hatari.machine = parser.value(optMachine);
+    cfg.hatari.headless = parser.isSet(optHeadless);
+
+    MainWindow window(cfg);
     window.show();
+
+    if (parser.isSet(optSelftest)) {
+        const QString outPng = parser.value(optSelftest);
+        // Save the first taken frame, then step once more and exit success.
+        QObject::connect(&window, &MainWindow::frameReceived, &app,
+                         [&app, outPng](const QImage &frame) {
+                             static bool done = false;
+                             if (done)
+                                 return;
+                             done = true;
+                             const bool ok = !frame.isNull() && frame.save(outPng);
+                             qInfo().noquote()
+                                 << "selftest: frame" << frame.width() << "x"
+                                 << frame.height() << (ok ? "saved" : "SAVE FAILED")
+                                 << outPng;
+                             app.exit(ok ? 0 : 3);
+                         });
+        // Fail if nothing arrives in time.
+        QTimer::singleShot(20000, &app, [&app]() {
+            qWarning("selftest: timed out with no frame");
+            app.exit(2);
+        });
+        QTimer::singleShot(0, &window, &MainWindow::startSession);
+    }
 
     return QApplication::exec();
 }

@@ -11,10 +11,13 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 
 qt_standard_project_setup()
 
-# As the app grows, add sources per component directory. For the pre-M0 scaffold
-# this is a single translation unit that proves the toolchain and opens a window.
 add_executable(talos
   src/main.cpp
+  src/app/MainWindow.cpp
+  src/protocol/RdbClient.cpp
+  src/session/HatariLauncher.cpp
+  src/model/MachineState.cpp
+  src/view/FramebufferView.cpp
 )
 
 target_include_directories(talos PRIVATE src)

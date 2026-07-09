@@ -1,0 +1,83 @@
+// MainWindow — the M0 Talos shell.
+//
+// Assembles the framebuffer view, a register/counter panel and run/stop/step
+// controls over an RdbClient + HatariLauncher. This is the M0 exit criterion:
+// connect over the socket, read registers + VBL/HBL/cycle counters, run/stop/
+// step, and display Hatari's framebuffer.
+
+#pragma once
+
+#include <QMainWindow>
+#include <QTemporaryDir>
+
+#include "model/MachineState.h"
+#include "session/HatariLauncher.h"
+
+class RdbClient;
+class FramebufferView;
+class QImage;
+class QAction;
+class QTableWidget;
+class QLabel;
+class QTimer;
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+public:
+    struct Config
+    {
+        HatariLauncher::Config hatari;   // launch parameters
+        bool attachOnly = false;         // skip launching; connect to a running Hatari
+        QString host = "127.0.0.1";
+    };
+
+    explicit MainWindow(Config config, QWidget *parent = nullptr);
+    ~MainWindow() override;
+
+    // Programmatic entry point (used by the GUI button and by --selftest).
+    void startSession();
+
+signals:
+    // Emitted whenever a fresh framebuffer is taken and displayed.
+    void frameReceived(const QImage &frame);
+
+private slots:
+    void onStartClicked();      // launch (or attach) + connect
+    void onConnected();
+    void onConnectionFailed(const QString &reason);
+    void onNotification(const QByteArray &name, const QList<QByteArray> &args);
+    void refresh();             // pull regs + a fresh framebuffer
+    void doBreak();
+    void doRun();
+    void doStep();
+
+private:
+    void buildUi();
+    void updateRegisterPanel();
+    void updateStatusBar();
+    void setRunningControlsEnabled(bool connected);
+    void refreshScreen();
+    void refreshRegs();
+
+    Config m_config;
+    RdbClient *m_rdb = nullptr;
+    HatariLauncher *m_launcher = nullptr;
+    FramebufferView *m_fb = nullptr;
+    QTableWidget *m_regTable = nullptr;
+    QTimer *m_liveTimer = nullptr;
+    QTemporaryDir m_shotDir;
+    QString m_shotPath;
+
+    QAction *m_actStart = nullptr;
+    QAction *m_actBreak = nullptr;
+    QAction *m_actRun = nullptr;
+    QAction *m_actStep = nullptr;
+    QAction *m_actRefresh = nullptr;
+    QAction *m_actLive = nullptr;
+
+    QLabel *m_connLabel = nullptr;
+    QLabel *m_posLabel = nullptr;
+
+    MachineState m_state;       // latest parsed regs/counters snapshot
+};
