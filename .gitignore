@@ -29,6 +29,7 @@ qrc_*.cpp
 !/tos/README.md
 
 # --- Editor / OS cruft ---
+.cache/
 .vscode/
 .idea/
 *.swp
