@@ -22,6 +22,7 @@ A Qt6 **visualiser** that drives a patched **Hatari** over a remote socket to ma
 3. `DECISIONS.md` — the ten decisions and why each is the way it is. Do not silently reverse any; each has an explicit reversal condition.
 4. `REGISTERS.md` — features (F-201–) and constraints (C-001–).
 5. `ROADMAP.md` — the six phases; start at Phase 0.
+6. `BUGS.md` — open known issues and by-design limitations (BUG-NNN); check before you trip over one.
 
 ## Prior art you must look at before writing code
 
@@ -54,7 +55,7 @@ A Qt6 **visualiser** that drives a patched **Hatari** over a remote socket to ma
 ## Repo hygiene (house standard)
 
 - Four-field blockquote header on every document: Status / Provenance / Last reviewed / Why this status. Status vocabulary: Active, Dormant, Complete, Archived, Superseded.
-- Append-only registers: F-NNN features, D-NNN decisions, C-NNN constraints. Never renumber; never delete — supersede.
+- Append-only registers: F-NNN features, D-NNN decisions, C-NNN constraints, BUG-NNN known issues. Never renumber; never delete — supersede.
 - British English. ISO 8601 dates. Provenance uses role tags (e.g. "Claude (primary auditor)").
 - Decisions always carry a reversal condition. Propose Status/Why changes for confirmation rather than committing silently.
 

@@ -31,6 +31,7 @@ Talos does **not** contain an emulation core. It is a **Qt6 client** that drives
 | `ROADMAP.md` | The six-phase build plan (0–5), keyed to the architecture, with the validation harness as a cross-cutting concern. |
 | `DECISIONS.md` | Append-only decision register (D-NNN, Talos-scoped), each with a reversal condition. |
 | `REGISTERS.md` | Append-only feature (F-NNN) and constraint (C-NNN) registers. |
+| `BUGS.md` | Append-only register of open known issues and by-design limitations (BUG-NNN). |
 | `CLAUDE.md` | Handoff document for an AI or human collaborator picking this up cold. |
 
 ## Relationship to the wider ecosystem
