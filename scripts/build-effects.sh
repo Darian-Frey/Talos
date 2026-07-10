@@ -21,5 +21,11 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk/AUTO"
 "${VASM}" -Ftos \
   -o "${REPO_ROOT}/tests/effects/disk/AUTO/RBARS.PRG" \
   "${REPO_ROOT}/tests/effects/rasterbars.s"
-
 echo ">> built tests/effects/disk/AUTO/RBARS.PRG"
+
+# lborder: cycle-exact left-border removal on a band of scanlines.
+mkdir -p "${REPO_ROOT}/tests/effects/disk-lborder/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-lborder/AUTO/LB.PRG" \
+  "${REPO_ROOT}/tests/effects/lborder.s"
+echo ">> built tests/effects/disk-lborder/AUTO/LB.PRG"

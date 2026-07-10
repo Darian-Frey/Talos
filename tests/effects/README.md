@@ -14,6 +14,15 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `lborder.s` — **cycle-exact left-border removal**: switches the resolution
+  register `$ffff8260` hi/lo at `LineCycles <= 4` on a band of scanlines, opening
+  the left border there (green screen content fills the red border on those
+  lines). Syncs on VBL, masks MFP interrupts to kill jitter, runs a per-line loop
+  of exactly 512 cycles. Built to `disk-lborder/AUTO/LB.PRG`. The Phase 1 exit
+  criterion's "border removal" case. See `docs/phase-1/left-border.md`.
+
+Each effect has its own GEMDOS drive dir (an AUTO-folder program loops forever, so
+they can't share one). Run e.g. `talos --effect tests/effects/disk-lborder`.
 
 ## Running
 

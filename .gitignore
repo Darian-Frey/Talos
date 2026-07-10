@@ -39,3 +39,7 @@ qrc_*.cpp
 # --- Local, machine-specific config ---
 /.talos.local
 compile_commands.json
+
+# Python bytecode
+__pycache__/
+*.pyc
