@@ -1,14 +1,27 @@
-// FramebufferView — displays Hatari's taken framebuffer (D-007).
+// FramebufferView — displays Hatari's taken framebuffer (D-007) with a beam-
+// position overlay (F-203).
 //
-// It holds the most recent frame (a PNG grabbed via `console screenshot`) and
-// paints it centred, scaled to fit while preserving aspect ratio, with nearest-
-// neighbour sampling so ST pixels stay crisp. This is the visual base that
-// Phase 1's beam/register overlays will later be drawn on top of.
+// The frame is painted centred and aspect-preserved with crisp pixels; the beam
+// overlay is registered to it. The overlay is described in image-pixel space by
+// a BeamMarker (the geometry lives in BeamGeometry); this widget only draws it.
 
 #pragma once
 
 #include <QImage>
+#include <QString>
 #include <QWidget>
+
+// What to draw for the beam, in framebuffer image-pixel coordinates.
+struct BeamMarker
+{
+    bool valid = false;       // anything to draw at all
+    bool scanline = false;    // draw the horizontal current-scanline line at y
+    double y = 0.0;
+    bool crosshair = false;   // draw the beam crosshair at (x, y)
+    double x = 0.0;
+    bool vblank = false;      // beam is in vertical blanking -> top banner instead
+    QString label;
+};
 
 class FramebufferView : public QWidget
 {
@@ -20,9 +33,20 @@ public:
     bool hasImage() const { return !m_image.isNull(); }
     QSize imageSize() const { return m_image.size(); }
 
+    void setBeam(const BeamMarker &marker);
+
+    // The current frame with the beam overlay burned in, in image-pixel space
+    // (no widget scaling). Used for headless verification and, later, export.
+    QImage composite() const;
+
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    QRectF frameRect() const;
+    // Draws the beam overlay with the given image->target transform.
+    void paintBeam(QPainter &painter, const QRectF &dst, double sx, double sy) const;
+
     QImage m_image;
+    BeamMarker m_beam;
 };

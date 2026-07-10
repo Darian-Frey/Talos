@@ -3,6 +3,44 @@
 #include <QPainter>
 #include <QPaintEvent>
 
+namespace {
+const QColor kMarkerCol(255, 220, 0);          // yellow beam crosshair
+const QColor kVblankCol(140, 170, 255);        // blue-ish "beam in blanking"
+constexpr double kCross = 5.0;
+
+// Rec. 601 luma of an image pixel (0..255); mid-grey fallback off-image.
+int lumaAt(const QImage &img, int x, int y)
+{
+    if (x < 0 || y < 0 || x >= img.width() || y >= img.height())
+        return 128;
+    const QRgb p = img.pixel(x, y);
+    return (299 * qRed(p) + 587 * qGreen(p) + 114 * qBlue(p)) / 1000;
+}
+
+// Average luma over image columns [x0, x1) at row y (sparsely sampled).
+int avgLuma(const QImage &img, int x0, int x1, int y)
+{
+    x0 = qBound(0, x0, img.width());
+    x1 = qBound(0, x1, img.width());
+    if (x1 <= x0)
+        return 128;
+    const int step = qMax(1, (x1 - x0) / 16);
+    long sum = 0;
+    int n = 0;
+    for (int x = x0; x < x1; x += step) {
+        sum += lumaAt(img, x, y);
+        ++n;
+    }
+    return n ? static_cast<int>(sum / n) : 128;
+}
+
+// A colour that contrasts with the given luma: light on dark, dark on light.
+QColor contrastColour(int luma, int alpha = 200)
+{
+    return luma < 128 ? QColor(255, 255, 255, alpha) : QColor(0, 0, 0, alpha);
+}
+}
+
 FramebufferView::FramebufferView(QWidget *parent)
     : QWidget(parent)
 {
@@ -19,6 +57,81 @@ void FramebufferView::setImage(const QImage &image)
     update();
 }
 
+void FramebufferView::setBeam(const BeamMarker &marker)
+{
+    m_beam = marker;
+    update();
+}
+
+QRectF FramebufferView::frameRect() const
+{
+    if (m_image.isNull())
+        return QRectF();
+    const QSize target = m_image.size().scaled(size(), Qt::KeepAspectRatio);
+    return QRectF(QPointF((width() - target.width()) / 2.0,
+                          (height() - target.height()) / 2.0),
+                  QSizeF(target));
+}
+
+void FramebufferView::paintBeam(QPainter &painter, const QRectF &dst,
+                                double sx, double sy) const
+{
+    if (!m_beam.valid)
+        return;
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    if (m_beam.vblank) {
+        // The beam is between rendered rows (e.g. after a break, at VBL). Show a
+        // banner at the top edge with the position, so it never looks broken.
+        painter.setPen(QPen(kVblankCol, 1.0, Qt::DashLine));
+        painter.drawLine(QPointF(dst.left(), dst.top() + 1), QPointF(dst.right(), dst.top() + 1));
+        if (!m_beam.label.isEmpty()) {
+            painter.setPen(kVblankCol);
+            painter.drawText(QPointF(dst.left() + 6, dst.top() + 15), m_beam.label);
+        }
+        return;
+    }
+
+    const double wy = dst.top() + m_beam.y * sy;
+    if (m_beam.scanline && !m_image.isNull()) {
+        // Adaptive colour: sample the frame behind the line per segment and pick
+        // light-on-dark / dark-on-light, so the scanline stays legible over both
+        // borders and content. Per-segment (not per-pixel) avoids dither noise.
+        const int iy = qBound(0, static_cast<int>(m_beam.y + 0.5), m_image.height() - 1);
+        const int w = m_image.width();
+        constexpr int kSegments = 32;
+        for (int s = 0; s < kSegments; ++s) {
+            const int ix0 = s * w / kSegments;
+            const int ix1 = (s + 1) * w / kSegments;
+            painter.setPen(QPen(contrastColour(avgLuma(m_image, ix0, ix1, iy)), 1.0));
+            painter.drawLine(QPointF(dst.left() + ix0 * sx, wy),
+                             QPointF(dst.left() + ix1 * sx, wy));
+        }
+    }
+
+    if (m_beam.crosshair) {
+        const double wx = dst.left() + m_beam.x * sx;
+        painter.setPen(QPen(kMarkerCol, 1.5));
+        painter.drawLine(QPointF(wx - kCross, wy), QPointF(wx + kCross, wy));
+        painter.drawLine(QPointF(wx, wy - kCross), QPointF(wx, wy + kCross));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(QPointF(wx, wy), kCross, kCross);
+        if (!m_beam.label.isEmpty()) {
+            painter.setPen(kMarkerCol);
+            QPointF tp(wx + kCross + 4, wy - kCross - 2);
+            if (tp.x() > dst.right() - 120)
+                tp.setX(wx - kCross - 4 - 110);
+            if (tp.y() < dst.top() + 12)
+                tp.setY(wy + kCross + 12);
+            painter.drawText(tp, m_beam.label);
+        }
+    } else if (m_beam.scanline && !m_beam.label.isEmpty()) {
+        // Scanline visible but cycle in horizontal blanking: label the line.
+        painter.setPen(kMarkerCol);
+        painter.drawText(QPointF(dst.left() + 6, wy - 4), m_beam.label);
+    }
+}
+
 void FramebufferView::paintEvent(QPaintEvent *event)
 {
     QPainter painter(this);
@@ -31,11 +144,20 @@ void FramebufferView::paintEvent(QPaintEvent *event)
         return;
     }
 
-    // Fit-to-widget, aspect-preserving, crisp pixels.
-    const QSize target = m_image.size().scaled(size(), Qt::KeepAspectRatio);
-    const QRect dst(QPoint((width() - target.width()) / 2,
-                           (height() - target.height()) / 2),
-                    target);
+    const QRectF dst = frameRect();
     painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
     painter.drawImage(dst, m_image);
+
+    paintBeam(painter, dst, dst.width() / m_image.width(), dst.height() / m_image.height());
+}
+
+QImage FramebufferView::composite() const
+{
+    if (m_image.isNull())
+        return QImage();
+    QImage out = m_image.convertToFormat(QImage::Format_ARGB32);
+    QPainter p(&out);
+    // Draw directly in image-pixel space (transform is identity).
+    paintBeam(p, QRectF(QPointF(0, 0), QSizeF(out.size())), 1.0, 1.0);
+    return out;
 }

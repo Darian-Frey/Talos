@@ -18,6 +18,7 @@ add_executable(talos
   src/session/HatariLauncher.cpp
   src/model/MachineState.cpp
   src/view/FramebufferView.cpp
+  src/view/BeamGeometry.cpp
 )
 
 target_include_directories(talos PRIVATE src)

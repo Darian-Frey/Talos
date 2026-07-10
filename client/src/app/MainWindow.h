@@ -12,6 +12,7 @@
 
 #include "model/MachineState.h"
 #include "session/HatariLauncher.h"
+#include "view/BeamGeometry.h"
 
 class RdbClient;
 class FramebufferView;
@@ -20,6 +21,7 @@ class QAction;
 class QTableWidget;
 class QLabel;
 class QTimer;
+class QSpinBox;
 
 class MainWindow : public QMainWindow
 {
@@ -39,8 +41,9 @@ public:
     void startSession();
 
 signals:
-    // Emitted whenever a fresh framebuffer is taken and displayed.
-    void frameReceived(const QImage &frame);
+    // Emitted whenever a fresh framebuffer is taken and displayed. beamVisible is
+    // true when the beam fell inside the rendered area (so the overlay is drawn).
+    void frameReceived(const QImage &frame, bool beamVisible);
 
 private slots:
     void onStartClicked();      // launch (or attach) + connect
@@ -51,6 +54,7 @@ private slots:
     void doBreak();
     void doRun();
     void doStep();
+    void runToLine();   // park the beam on a chosen visible scanline (F-203)
 
 private:
     void buildUi();
@@ -59,6 +63,7 @@ private:
     void setRunningControlsEnabled(bool connected);
     void refreshScreen();
     void refreshRegs();
+    bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
 
     Config m_config;
     RdbClient *m_rdb = nullptr;
@@ -75,9 +80,12 @@ private:
     QAction *m_actStep = nullptr;
     QAction *m_actRefresh = nullptr;
     QAction *m_actLive = nullptr;
+    QAction *m_actRunToLine = nullptr;
+    QSpinBox *m_lineSpin = nullptr;
 
     QLabel *m_connLabel = nullptr;
     QLabel *m_posLabel = nullptr;
 
     MachineState m_state;       // latest parsed regs/counters snapshot
+    VideoRegion m_region = VideoRegion::Pal50;  // Phase 2 makes this selectable
 };

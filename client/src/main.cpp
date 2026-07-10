@@ -82,18 +82,24 @@ int main(int argc, char *argv[])
 
     if (parser.isSet(optSelftest)) {
         const QString outPng = parser.value(optSelftest);
-        // Save the first taken frame, then step once more and exit success.
+        // Prefer a frame where the beam is inside the visible area (so the overlay
+        // is drawn); the free-running beam is often in blanking. Fall back to
+        // saving whatever we have after several frames so the test still ends.
         QObject::connect(&window, &MainWindow::frameReceived, &app,
-                         [&app, outPng](const QImage &frame) {
+                         [&app, outPng](const QImage &frame, bool beamVisible) {
                              static bool done = false;
+                             static int frames = 0;
                              if (done)
                                  return;
+                             ++frames;
+                             if (!beamVisible && frames < 20)
+                                 return; // wait for a visible-beam frame
                              done = true;
                              const bool ok = !frame.isNull() && frame.save(outPng);
                              qInfo().noquote()
                                  << "selftest: frame" << frame.width() << "x"
-                                 << frame.height() << (ok ? "saved" : "SAVE FAILED")
-                                 << outPng;
+                                 << frame.height() << "beamVisible" << beamVisible
+                                 << (ok ? "saved" : "SAVE FAILED") << outPng;
                              app.exit(ok ? 0 : 3);
                          });
         // Fail if nothing arrives in time.

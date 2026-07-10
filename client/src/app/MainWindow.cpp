@@ -10,6 +10,7 @@
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
+#include <QSpinBox>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
@@ -80,6 +81,18 @@ void MainWindow::buildUi()
         else
             m_liveTimer->stop();
     });
+    tb->addSeparator();
+
+    tb->addWidget(new QLabel(QStringLiteral(" Line "), this));
+    m_lineSpin = new QSpinBox(this);
+    m_lineSpin->setRange(0, 312);          // scanlines per PAL frame
+    m_lineSpin->setValue(150);
+    m_lineSpin->setToolTip(QStringLiteral("Target scanline for Run→Line"));
+    tb->addWidget(m_lineSpin);
+    m_actRunToLine = tb->addAction(QStringLiteral("Run→Line"));
+    m_actRunToLine->setToolTip(
+        QStringLiteral("Run until the beam reaches this scanline, then stop"));
+    connect(m_actRunToLine, &QAction::triggered, this, &MainWindow::runToLine);
 
     m_fb = new FramebufferView(this);
     setCentralWidget(m_fb);
@@ -148,8 +161,9 @@ void MainWindow::refresh()
 {
     if (!m_rdb->isConnected())
         return;
+    // Chain regs -> screenshot so the beam overlay is computed from the register
+    // snapshot that matches the frame we then grab.
     refreshRegs();
-    refreshScreen();
 }
 
 void MainWindow::refreshRegs()
@@ -158,6 +172,7 @@ void MainWindow::refreshRegs()
         m_state = MachineState::fromRegsReply(tokens);
         updateRegisterPanel();
         updateStatusBar();
+        refreshScreen();
     });
 }
 
@@ -169,11 +184,46 @@ void MainWindow::refreshScreen()
         if (reply.isEmpty() || reply.first() != "OK")
             return;
         QImage img(m_shotPath);   // freshly written PNG of Hatari's rendered frame
-        if (!img.isNull()) {
-            m_fb->setImage(img);
-            emit frameReceived(img);
-        }
+        if (img.isNull())
+            return;
+        m_fb->setImage(img);
+        const bool beamVisible = updateBeamOverlay(img.size());
+        emit frameReceived(m_fb->composite(), beamVisible);
     });
+}
+
+bool MainWindow::updateBeamOverlay(QSize frameSize)
+{
+    const auto scanline = m_state.hbl();
+    const auto cycle = m_state.lineCycles();
+    BeamMarker mk;
+    if (!scanline || !cycle || frameSize.isEmpty()) {
+        m_fb->setBeam(mk);   // valid == false: nothing to draw
+        return false;
+    }
+
+    const BeamGeometry geo(m_region, frameSize);
+    const BeamMapping bm = geo.map(static_cast<int>(*scanline), static_cast<int>(*cycle));
+    const QString pos = QStringLiteral("HBL %1 · cyc %2").arg(*scanline).arg(*cycle);
+
+    mk.valid = true;
+    if (bm.yVisible) {
+        mk.scanline = true;
+        mk.y = bm.y;
+        if (bm.xVisible) {
+            mk.crosshair = true;
+            mk.x = bm.x;
+            mk.label = pos;
+        } else {
+            mk.label = pos + QStringLiteral("  (h-blank)");
+        }
+    } else {
+        // Beam above/below the rendered rows (e.g. after a break, at VBL).
+        mk.vblank = true;
+        mk.label = QStringLiteral("beam in blanking · ") + pos;
+    }
+    m_fb->setBeam(mk);
+    return mk.crosshair;
 }
 
 void MainWindow::updateRegisterPanel()
@@ -231,6 +281,21 @@ void MainWindow::doStep()
     m_rdb->step([this](const RdbClient::Tokens &) { refresh(); });
 }
 
+void MainWindow::runToLine()
+{
+    if (!m_rdb->isConnected())
+        return;
+    const int line = m_lineSpin->value();
+    // Set a one-shot breakpoint on the scanline counter and run to it. Verified
+    // syntax: single '=' (not '=='), ':once' auto-removes it after the hit.
+    m_rdb->sendCommand(QByteArray("bp HBL = ") + QByteArray::number(line) + " :once");
+    m_rdb->run();
+    statusBar()->showMessage(QStringLiteral("Running to scanline %1…").arg(line), 2000);
+    // The breakpoint hits within a frame; refresh shortly after to show the beam
+    // parked on that line (robust whether or not Live is on).
+    QTimer::singleShot(200, this, &MainWindow::refresh);
+}
+
 void MainWindow::setRunningControlsEnabled(bool connected)
 {
     m_actBreak->setEnabled(connected);
@@ -238,4 +303,6 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_actStep->setEnabled(connected);
     m_actRefresh->setEnabled(connected);
     m_actLive->setEnabled(connected);
+    m_actRunToLine->setEnabled(connected);
+    m_lineSpin->setEnabled(connected);
 }
