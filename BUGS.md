@@ -19,11 +19,13 @@ Fields: **Status** (Open / Fixed / Won't-fix / Superseded), **Severity**
 ---
 
 **BUG-001 — Launcher does not force a clean Hatari config.**
-Status: Open · Severity: Medium · Area: session/HatariLauncher
+Status: Fixed · Severity: Medium · Area: session/HatariLauncher
 A stray user `~/.config/hatari/hatari.cfg` (e.g. a floppy set in A:) can hijack
 the boot drive so a GEMDOS-`AUTO` effect never runs. The launcher should pass
 `--configfile <controlled>` so runs are reproducible regardless of user config.
 (See `docs/phase-1/register-writes.md`.)
+Fixed: `HatariLauncher::Config::cleanConfig` (default on) launches with an empty
+`--configfile`.
 
 **BUG-002 — Region is hard-coded to PAL 50 Hz.**
 Status: Open · Severity: Medium · Area: view/BeamGeometry, app

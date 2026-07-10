@@ -11,17 +11,20 @@
 #include <QTemporaryDir>
 
 #include "model/MachineState.h"
+#include "model/WriteEvent.h"
 #include "session/HatariLauncher.h"
 #include "view/BeamGeometry.h"
 
 class RdbClient;
 class FramebufferView;
+class CaptureController;
 class QImage;
 class QAction;
 class QTableWidget;
 class QLabel;
 class QTimer;
 class QSpinBox;
+class QLineEdit;
 
 class MainWindow : public QMainWindow
 {
@@ -37,13 +40,16 @@ public:
     explicit MainWindow(Config config, QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    // Programmatic entry point (used by the GUI button and by --selftest).
+    // Programmatic entry points (used by the GUI and by --selftest*).
     void startSession();
+    void beginCapture(quint32 address, int count);
 
 signals:
     // Emitted whenever a fresh framebuffer is taken and displayed. beamVisible is
     // true when the beam fell inside the rendered area (so the overlay is drawn).
     void frameReceived(const QImage &frame, bool beamVisible);
+    // Emitted when a capture run finishes (a post-capture frame follows).
+    void captureCompleted(int nWrites);
 
 private slots:
     void onStartClicked();      // launch (or attach) + connect
@@ -55,6 +61,10 @@ private slots:
     void doRun();
     void doStep();
     void runToLine();   // park the beam on a chosen visible scanline (F-203)
+    void onCaptureClicked();
+    void onCaptureProgress(int count, int target);
+    void onCaptureFinished(bool ok, const QString &reason);
+    void onTimelineRowChanged(int row);
 
 private:
     void buildUi();
@@ -64,6 +74,9 @@ private:
     void refreshScreen();
     void refreshRegs();
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
+    void recomputeWriteMarks(QSize frameSize);
+    void populateTimeline();
+    void setControlsEnabledForCapture(bool capturing);
 
     Config m_config;
     RdbClient *m_rdb = nullptr;
@@ -82,10 +95,18 @@ private:
     QAction *m_actLive = nullptr;
     QAction *m_actRunToLine = nullptr;
     QSpinBox *m_lineSpin = nullptr;
+    QAction *m_actCapture = nullptr;
+    QLineEdit *m_regEdit = nullptr;
+    QSpinBox *m_countSpin = nullptr;
+    QTableWidget *m_timeline = nullptr;
 
     QLabel *m_connLabel = nullptr;
     QLabel *m_posLabel = nullptr;
 
     MachineState m_state;       // latest parsed regs/counters snapshot
     VideoRegion m_region = VideoRegion::Pal50;  // Phase 2 makes this selectable
+
+    CaptureController *m_capture = nullptr;
+    QVector<WriteEvent> m_writes;   // last captured register writes
+    int m_highlightRow = -1;        // selected timeline row -> highlighted marker
 };

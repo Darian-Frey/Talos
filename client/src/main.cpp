@@ -61,12 +61,22 @@ int main(int argc, char *argv[])
         "attach", "Attach to an already-running Hatari instead of launching one.");
     const QCommandLineOption optHost("host", "Remote host to connect to.", "host",
                                      "127.0.0.1");
+    const QCommandLineOption optEffect(
+        "effect",
+        "GEMDOS drive dir whose AUTO folder holds an effect to auto-run "
+        "(e.g. tests/effects/disk).",
+        "dir");
     const QCommandLineOption optSelftest(
         "selftest",
         "Headless CI check: auto-start, step, save one taken frame to <png>, exit.",
         "png");
-    parser.addOptions(
-        {optHatari, optTos, optMachine, optHeadless, optAttach, optHost, optSelftest});
+    const QCommandLineOption optSelftestCapture(
+        "selftest-capture",
+        "Headless CI check: run the --effect, capture writes to $ffff8240, save the "
+        "frame with write markers to <png>, exit.",
+        "png");
+    parser.addOptions({optHatari, optTos, optMachine, optHeadless, optAttach, optHost,
+                       optEffect, optSelftest, optSelftestCapture});
     parser.process(app);
 
     MainWindow::Config cfg;
@@ -76,6 +86,8 @@ int main(int argc, char *argv[])
     cfg.hatari.tosImage = parser.value(optTos);
     cfg.hatari.machine = parser.value(optMachine);
     cfg.hatari.headless = parser.isSet(optHeadless);
+    if (parser.isSet(optEffect))
+        cfg.hatari.gemdosDir = QFileInfo(parser.value(optEffect)).absoluteFilePath();
 
     MainWindow window(cfg);
     window.show();
@@ -107,6 +119,33 @@ int main(int argc, char *argv[])
             qWarning("selftest: timed out with no frame");
             app.exit(2);
         });
+        QTimer::singleShot(0, &window, &MainWindow::startSession);
+    }
+
+    if (parser.isSet(optSelftestCapture)) {
+        const QString outPng = parser.value(optSelftestCapture);
+        auto *captured = new int(-1);
+        QObject::connect(&window, &MainWindow::captureCompleted, &app,
+                         [captured](int n) { *captured = n; });
+        // The post-capture frame (with write markers) follows captureCompleted.
+        QObject::connect(&window, &MainWindow::frameReceived, &app,
+                         [&app, outPng, captured](const QImage &frame, bool) {
+                             if (*captured < 0)
+                                 return;   // capture not done yet
+                             const bool ok = *captured > 0 && !frame.isNull()
+                                             && frame.save(outPng);
+                             qInfo().noquote() << "selftest-capture:" << *captured
+                                               << "writes" << (ok ? "saved" : "FAILED")
+                                               << outPng;
+                             app.exit(ok ? 0 : 3);
+                         });
+        QTimer::singleShot(45000, &app, [&app]() {
+            qWarning("selftest-capture: timed out");
+            app.exit(2);
+        });
+        // Give EmuTOS time to boot and the AUTO effect to start writing (~14 s).
+        QTimer::singleShot(18000, &window,
+                           [&window]() { window.beginCapture(0xffff8240u, 48); });
         QTimer::singleShot(0, &window, &MainWindow::startSession);
     }
 

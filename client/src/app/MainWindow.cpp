@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "capture/CaptureController.h"
 #include "protocol/RdbClient.h"
 #include "view/FramebufferView.h"
 
@@ -10,6 +11,7 @@
 #include <QHeaderView>
 #include <QImage>
 #include <QLabel>
+#include <QLineEdit>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTableWidget>
@@ -18,6 +20,16 @@
 
 namespace {
 constexpr int kLiveIntervalMs = 250;   // ~4 Hz live refresh
+
+// Decode an ST palette value (%0000 0RRR 0GGG 0BBB, 3 bits/gun) to an RGB colour,
+// so a captured colour-register write is drawn in the colour it set.
+QColor stColour(quint32 value)
+{
+    const int r = (value >> 8) & 7;
+    const int g = (value >> 4) & 7;
+    const int b = value & 7;
+    return QColor(r * 36, g * 36, b * 36);
+}
 }
 
 MainWindow::MainWindow(Config config, QWidget *parent)
@@ -38,6 +50,10 @@ MainWindow::MainWindow(Config config, QWidget *parent)
     connect(m_launcher, &HatariLauncher::failed, this, [this](const QString &r) {
         statusBar()->showMessage(QStringLiteral("Hatari launch failed: %1").arg(r), 8000);
     });
+
+    m_capture = new CaptureController(m_rdb, this);
+    connect(m_capture, &CaptureController::progress, this, &MainWindow::onCaptureProgress);
+    connect(m_capture, &CaptureController::finished, this, &MainWindow::onCaptureFinished);
 
     m_liveTimer->setInterval(kLiveIntervalMs);
     connect(m_liveTimer, &QTimer::timeout, this, &MainWindow::refresh);
@@ -93,6 +109,23 @@ void MainWindow::buildUi()
     m_actRunToLine->setToolTip(
         QStringLiteral("Run until the beam reaches this scanline, then stop"));
     connect(m_actRunToLine, &QAction::triggered, this, &MainWindow::runToLine);
+    tb->addSeparator();
+
+    tb->addWidget(new QLabel(QStringLiteral(" Reg $"), this));
+    m_regEdit = new QLineEdit(QStringLiteral("ffff8240"), this);
+    m_regEdit->setFixedWidth(80);
+    m_regEdit->setToolTip(QStringLiteral("Hardware register (hex) to watch for writes"));
+    tb->addWidget(m_regEdit);
+    tb->addWidget(new QLabel(QStringLiteral(" × "), this));
+    m_countSpin = new QSpinBox(this);
+    m_countSpin->setRange(1, 512);
+    m_countSpin->setValue(48);
+    m_countSpin->setToolTip(QStringLiteral("How many writes to capture"));
+    tb->addWidget(m_countSpin);
+    m_actCapture = tb->addAction(QStringLiteral("Capture"));
+    m_actCapture->setToolTip(
+        QStringLiteral("Capture writes to the register and map each to the beam"));
+    connect(m_actCapture, &QAction::triggered, this, &MainWindow::onCaptureClicked);
 
     m_fb = new FramebufferView(this);
     setCentralWidget(m_fb);
@@ -109,6 +142,23 @@ void MainWindow::buildUi()
     dock->setWidget(m_regTable);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, dock);
+
+    // Register-write timeline (F-203): captured writes ordered by frame cycle.
+    m_timeline = new QTableWidget(0, 6, this);
+    m_timeline->setHorizontalHeaderLabels(
+        {QStringLiteral("frame-cyc"), QStringLiteral("HBL"), QStringLiteral("cyc"),
+         QStringLiteral("addr"), QStringLiteral("value"), QStringLiteral("PC")});
+    m_timeline->horizontalHeader()->setStretchLastSection(true);
+    m_timeline->verticalHeader()->setVisible(false);
+    m_timeline->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_timeline->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_timeline->setSelectionMode(QAbstractItemView::SingleSelection);
+    connect(m_timeline, &QTableWidget::currentCellChanged, this,
+            [this](int row, int, int, int) { onTimelineRowChanged(row); });
+
+    auto *tdock = new QDockWidget(QStringLiteral("Register-write timeline"), this);
+    tdock->setWidget(m_timeline);
+    addDockWidget(Qt::BottomDockWidgetArea, tdock);
 
     m_connLabel = new QLabel(QStringLiteral("disconnected"), this);
     m_posLabel = new QLabel(QString(), this);
@@ -188,6 +238,7 @@ void MainWindow::refreshScreen()
             return;
         m_fb->setImage(img);
         const bool beamVisible = updateBeamOverlay(img.size());
+        recomputeWriteMarks(img.size());
         emit frameReceived(m_fb->composite(), beamVisible);
     });
 }
@@ -296,6 +347,119 @@ void MainWindow::runToLine()
     QTimer::singleShot(200, this, &MainWindow::refresh);
 }
 
+void MainWindow::beginCapture(quint32 address, int count)
+{
+    m_regEdit->setText(QString::number(address, 16));
+    m_countSpin->setValue(count);
+    onCaptureClicked();
+}
+
+void MainWindow::onCaptureClicked()
+{
+    if (!m_rdb->isConnected() || m_capture->isRunning())
+        return;
+    bool ok = false;
+    const quint32 addr = m_regEdit->text().trimmed().toUInt(&ok, 16);
+    if (!ok) {
+        statusBar()->showMessage(QStringLiteral("Invalid register address"), 4000);
+        return;
+    }
+    m_liveTimer->stop();          // don't interleave live refreshes with capture
+    m_writes.clear();
+    m_highlightRow = -1;
+    m_timeline->setRowCount(0);
+    m_fb->setWriteMarks({});
+    setControlsEnabledForCapture(true);
+    statusBar()->showMessage(QStringLiteral("Capturing writes to $%1…").arg(addr, 0, 16));
+    m_capture->start(addr, m_countSpin->value());
+}
+
+void MainWindow::onCaptureProgress(int count, int target)
+{
+    statusBar()->showMessage(QStringLiteral("Captured %1/%2…").arg(count).arg(target));
+}
+
+void MainWindow::onCaptureFinished(bool ok, const QString &reason)
+{
+    m_writes = m_capture->events();
+    populateTimeline();
+    setControlsEnabledForCapture(false);
+    if (ok)
+        statusBar()->showMessage(QStringLiteral("Captured %1 writes to $%2.")
+                                     .arg(m_writes.size())
+                                     .arg(m_capture->address(), 0, 16), 5000);
+    else
+        statusBar()->showMessage(QStringLiteral("Capture ended after %1 writes: %2")
+                                     .arg(m_writes.size(), 0).arg(reason), 6000);
+    refresh();   // fresh frame; write marks are recomputed in refreshScreen
+    emit captureCompleted(m_writes.size());
+}
+
+void MainWindow::onTimelineRowChanged(int row)
+{
+    m_highlightRow = row;
+    recomputeWriteMarks(m_fb->imageSize());
+}
+
+void MainWindow::recomputeWriteMarks(QSize frameSize)
+{
+    if (frameSize.isEmpty() || m_writes.isEmpty()) {
+        m_fb->setWriteMarks({});
+        return;
+    }
+    const BeamGeometry geo(m_region, frameSize);
+    QVector<FramebufferView::WriteMark> marks;
+    marks.reserve(m_writes.size());
+    for (int i = 0; i < m_writes.size(); ++i) {
+        const WriteEvent &w = m_writes[i];
+        const auto px = geo.toPixel(w.scanline, w.cycleInLine);
+        if (!px)
+            continue;   // write landed in blanking — not on the rendered frame
+        FramebufferView::WriteMark m;
+        m.pos = *px;
+        m.color = stColour(w.value);   // draw in the colour the write set
+        m.highlight = (i == m_highlightRow);
+        marks.append(m);
+    }
+    m_fb->setWriteMarks(marks);
+}
+
+void MainWindow::populateTimeline()
+{
+    m_timeline->setRowCount(m_writes.size());
+    for (int i = 0; i < m_writes.size(); ++i) {
+        const WriteEvent &w = m_writes[i];
+        auto put = [&](int col, const QString &text, const QColor *bg = nullptr) {
+            auto *item = new QTableWidgetItem(text);
+            if (bg)
+                item->setBackground(*bg);
+            m_timeline->setItem(i, col, item);
+        };
+        put(0, QString::number(w.frameCycle));
+        put(1, QString::number(w.scanline));
+        put(2, QString::number(w.cycleInLine));
+        put(3, QStringLiteral("$%1").arg(w.address, 0, 16));
+        const QColor c = stColour(w.value);
+        put(4, QStringLiteral("$%1").arg(w.value, 0, 16), &c);
+        put(5, QStringLiteral("$%1").arg(w.pc, 0, 16));
+    }
+}
+
+void MainWindow::setControlsEnabledForCapture(bool capturing)
+{
+    const bool en = !capturing;
+    m_actBreak->setEnabled(en);
+    m_actRun->setEnabled(en);
+    m_actStep->setEnabled(en);
+    m_actRefresh->setEnabled(en);
+    m_actLive->setEnabled(en);
+    m_actRunToLine->setEnabled(en);
+    m_lineSpin->setEnabled(en);
+    m_actCapture->setEnabled(en);
+    m_regEdit->setEnabled(en);
+    m_countSpin->setEnabled(en);
+}
+
 void MainWindow::setRunningControlsEnabled(bool connected)
 {
     m_actBreak->setEnabled(connected);
@@ -305,4 +469,7 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_actLive->setEnabled(connected);
     m_actRunToLine->setEnabled(connected);
     m_lineSpin->setEnabled(connected);
+    m_actCapture->setEnabled(connected);
+    m_regEdit->setEnabled(connected);
+    m_countSpin->setEnabled(connected);
 }

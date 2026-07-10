@@ -1,5 +1,6 @@
 #include "HatariLauncher.h"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QProcessEnvironment>
 
@@ -42,11 +43,23 @@ bool HatariLauncher::launch(const Config &cfg)
     }
 
     QStringList args;
+
+    // Ignore the user config so a stray floppy/boot setting can't hijack the run.
+    if (cfg.cleanConfig && m_scratch.isValid()) {
+        const QString cfgPath = m_scratch.filePath("empty.cfg");
+        QFile f(cfgPath);
+        if (f.open(QIODevice::WriteOnly))
+            f.close();   // an empty file is a valid, do-nothing Hatari config
+        args << "--configfile" << cfgPath;
+    }
+
     args << "--machine" << cfg.machine
          << "--tos" << cfg.tosImage
          << "--sound" << "off";
     if (cfg.hideStatusBar)
         args << "--statusbar" << "off";
+    if (!cfg.gemdosDir.isEmpty())
+        args << "-d" << cfg.gemdosDir;   // mounts as C:; AUTO\*.PRG auto-runs
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (cfg.headless) {

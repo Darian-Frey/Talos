@@ -10,6 +10,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QString>
+#include <QTemporaryDir>
 
 class HatariLauncher : public QObject
 {
@@ -23,6 +24,13 @@ public:
         bool headless = false;        // run with dummy SDL video/audio (no window)
         bool hideStatusBar = true;    // hide Hatari's own status-bar overlay
         quint16 remotePort = 56001;   // fixed by the fork (RDB_PORT)
+        // Optional GEMDOS drive directory (mounted C:) — used to auto-run an
+        // effect from its AUTO folder (tests/effects/disk).
+        QString gemdosDir;
+        // Ignore the user's ~/.config/hatari/hatari.cfg by launching with an
+        // empty config, so a stray floppy setting can't hijack the boot drive
+        // (BUG-001). On by default for reproducible runs.
+        bool cleanConfig = true;
     };
 
     explicit HatariLauncher(QObject *parent = nullptr);
@@ -41,4 +49,5 @@ signals:
 
 private:
     QProcess *m_process = nullptr;
+    QTemporaryDir m_scratch;   // holds the empty config file for cleanConfig
 };

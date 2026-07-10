@@ -63,6 +63,37 @@ void FramebufferView::setBeam(const BeamMarker &marker)
     update();
 }
 
+void FramebufferView::setWriteMarks(const QVector<WriteMark> &marks)
+{
+    m_writeMarks = marks;
+    update();
+}
+
+void FramebufferView::paintMarks(QPainter &painter, const QRectF &dst,
+                                 double sx, double sy) const
+{
+    if (m_writeMarks.isEmpty())
+        return;
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    for (const WriteMark &m : m_writeMarks) {
+        const double x = dst.left() + m.pos.x() * sx;
+        const double y = dst.top() + m.pos.y() * sy;
+        const double r = m.highlight ? 4.5 : 2.5;
+        // Adaptive outline: the value-coloured fill can match the background it
+        // set, so contrast the outline against the frame behind the marker.
+        const int luma = lumaAt(m_image, static_cast<int>(m.pos.x() + 0.5),
+                                static_cast<int>(m.pos.y() + 0.5));
+        painter.setBrush(m.color);
+        painter.setPen(QPen(contrastColour(luma, 255), 1.0));
+        painter.drawEllipse(QPointF(x, y), r, r);
+        if (m.highlight) {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(contrastColour(luma, 255), 1.6));
+            painter.drawEllipse(QPointF(x, y), r + 2.5, r + 2.5);
+        }
+    }
+}
+
 QRectF FramebufferView::frameRect() const
 {
     if (m_image.isNull())
@@ -148,7 +179,10 @@ void FramebufferView::paintEvent(QPaintEvent *event)
     painter.setRenderHint(QPainter::SmoothPixmapTransform, false);
     painter.drawImage(dst, m_image);
 
-    paintBeam(painter, dst, dst.width() / m_image.width(), dst.height() / m_image.height());
+    const double sx = dst.width() / m_image.width();
+    const double sy = dst.height() / m_image.height();
+    paintMarks(painter, dst, sx, sy);
+    paintBeam(painter, dst, sx, sy);
 }
 
 QImage FramebufferView::composite() const
@@ -158,6 +192,8 @@ QImage FramebufferView::composite() const
     QImage out = m_image.convertToFormat(QImage::Format_ARGB32);
     QPainter p(&out);
     // Draw directly in image-pixel space (transform is identity).
-    paintBeam(p, QRectF(QPointF(0, 0), QSizeF(out.size())), 1.0, 1.0);
+    const QRectF dst(QPointF(0, 0), QSizeF(out.size()));
+    paintMarks(p, dst, 1.0, 1.0);
+    paintBeam(p, dst, 1.0, 1.0);
     return out;
 }

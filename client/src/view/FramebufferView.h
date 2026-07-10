@@ -7,8 +7,11 @@
 
 #pragma once
 
+#include <QColor>
 #include <QImage>
+#include <QPointF>
 #include <QString>
+#include <QVector>
 #include <QWidget>
 
 // What to draw for the beam, in framebuffer image-pixel coordinates.
@@ -35,8 +38,17 @@ public:
 
     void setBeam(const BeamMarker &marker);
 
-    // The current frame with the beam overlay burned in, in image-pixel space
-    // (no widget scaling). Used for headless verification and, later, export.
+    // Captured register-write positions (F-203), in image-pixel coordinates.
+    struct WriteMark
+    {
+        QPointF pos;
+        QColor color = QColor(0, 200, 255);
+        bool highlight = false;
+    };
+    void setWriteMarks(const QVector<WriteMark> &marks);
+
+    // The current frame with the beam + write overlay burned in, in image-pixel
+    // space (no widget scaling). Used for headless verification and, later, export.
     QImage composite() const;
 
 protected:
@@ -44,9 +56,11 @@ protected:
 
 private:
     QRectF frameRect() const;
-    // Draws the beam overlay with the given image->target transform.
+    // Draws the overlays with the given image->target transform.
     void paintBeam(QPainter &painter, const QRectF &dst, double sx, double sy) const;
+    void paintMarks(QPainter &painter, const QRectF &dst, double sx, double sy) const;
 
     QImage m_image;
     BeamMarker m_beam;
+    QVector<WriteMark> m_writeMarks;
 };
