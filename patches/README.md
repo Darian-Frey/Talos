@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), Phase 0 scaffold.
-> **Last reviewed:** 2026-07-09
-> **Why this status:** Empty by design. No B2 patch exists until a feature proves B1 cannot serve it (D-005). First candidates land in Phase 3.
+> **Last reviewed:** 2026-07-11
+> **Why this status:** First B2 patch landed in Phase 3 (`0001`, the Blitter tap). Further patches added only where a feature proves B1 cannot serve it (D-005).
 
 ---
 
@@ -21,5 +21,13 @@ protocol packet that carries its data out. Rules:
 - **Confirm tap points against real source first** (C-003) — the candidate
   points in ARCHITECTURE §3 are indicative until read in the fork.
 
-Maintained as an ordered series applied on top of the pinned fork commit
-(see `scripts/bootstrap-hatari.sh`). No patches yet.
+Maintained as an ordered series applied on top of the pinned fork commit by
+`scripts/bootstrap-hatari.sh` (idempotent: it skips already-applied patches).
+
+## The series
+
+- **`0001-tap-blitter-traffic.patch`** (F-208) — opt-in blitter memory-traffic
+  trace. Records each bus access (`Blitter_ReadWord` / `Blitter_WriteWord`) and a
+  blit-complete marker (`Blitter_Start`, `y_count==0`) into a host-side ring
+  buffer; exposes it over the new `blittrace` command (protocol/b1-protocol.md).
+  Off by default, so it does not perturb emulation. 3 files, +111 lines.

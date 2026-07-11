@@ -17,9 +17,11 @@ add_executable(talos
   src/protocol/RdbClient.cpp
   src/session/HatariLauncher.cpp
   src/model/MachineState.cpp
+  src/model/BlitterTrace.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
+  src/view/BlitterTrafficView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

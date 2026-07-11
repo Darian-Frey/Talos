@@ -33,6 +33,23 @@ fi
 git -C "${DEST}" fetch origin "${TALOS_HATARI_BRANCH}"
 git -C "${DEST}" checkout "${TALOS_HATARI_REF}"
 
+# Apply the Talos B2 patch series (patches/) on top of the pinned ref. Idempotent:
+# a patch already present (e.g. a dev tree mid-edit) reverse-checks clean and is
+# skipped; a genuine conflict is a hard error rather than a silent half-apply.
+shopt -s nullglob
+for p in "${REPO_ROOT}/patches/"*.patch; do
+  name="$(basename "${p}")"
+  if git -C "${DEST}" apply --check "${p}" 2>/dev/null; then
+    echo ">> applying ${name}"
+    git -C "${DEST}" apply "${p}"
+  elif git -C "${DEST}" apply --reverse --check "${p}" 2>/dev/null; then
+    echo ">> ${name} already applied, skipping"
+  else
+    echo "!! ${name} does not apply cleanly on ${TALOS_HATARI_REF}" >&2
+    exit 1
+  fi
+done
+
 echo ">> configuring (CMake)..."
 cmake -S "${DEST}" -B "${DEST}/build" -DCMAKE_BUILD_TYPE=Release
 

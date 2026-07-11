@@ -14,6 +14,12 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `blitfill.s` — **continuous blitter copies** (Phase 3, F-208): repeatedly blits
+  a 16×16-word source buffer to the top-left of the screen (HOP=source,
+  LOP=replace), so a `blittrace` capture always catches steady memory traffic
+  (256 reads + 256 writes per blit — exercises the read path, unlike a fill).
+  Needs a machine with a blitter: run on **STE / Mega ST / Mega STE**. Built to
+  `disk-blit/AUTO/BLIT.PRG`. Drives the Blitter traffic view.
 - `lborder.s` — **cycle-exact left-border removal**: switches the resolution
   register `$ffff8260` hi/lo at `LineCycles <= 4` on a band of scanlines, opening
   the left border there (green screen content fills the red border on those

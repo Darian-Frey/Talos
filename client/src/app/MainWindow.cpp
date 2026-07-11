@@ -3,6 +3,8 @@
 #include "capture/CaptureController.h"
 #include "model/Palette.h"
 #include "protocol/RdbClient.h"
+#include "model/BlitterTrace.h"
+#include "view/BlitterTrafficView.h"
 #include "view/CollapsibleDock.h"
 #include "view/FramebufferView.h"
 #include "view/PaletteView.h"
@@ -171,6 +173,12 @@ void MainWindow::buildUi()
         QStringLiteral("Capture writes to the register and map each to the beam"));
     connect(m_actCapture, &QAction::triggered, this, &MainWindow::onCaptureClicked);
 
+    tb->addSeparator();
+    m_actBlitCapture = tb->addAction(QStringLiteral("Blit capture"));
+    m_actBlitCapture->setToolTip(
+        QStringLiteral("F-208 (B2): trace blitter memory traffic over a short run window"));
+    connect(m_actBlitCapture, &QAction::triggered, this, &MainWindow::captureBlitTraffic);
+
     m_fb = new FramebufferView(this);
     setCentralWidget(m_fb);
 
@@ -205,6 +213,14 @@ void MainWindow::buildUi()
     auto *tdock =
         new CollapsibleDock(QStringLiteral("Register-write timeline"), m_timeline, this);
     addDockWidget(Qt::BottomDockWidgetArea, tdock);
+
+    // Blitter memory-traffic view (F-208, B2): tabbed alongside the timeline.
+    m_blitView = new BlitterTrafficView(this);
+    auto *blitDock =
+        new CollapsibleDock(QStringLiteral("Blitter traffic"), m_blitView, this);
+    addDockWidget(Qt::BottomDockWidgetArea, blitDock);
+    tabifyDockWidget(tdock, blitDock);
+    tdock->raise();   // timeline shown first
 
     // Machine capabilities / differential view (F-207).
     m_capsLabel = new QLabel(this);
@@ -590,6 +606,54 @@ void MainWindow::onCaptureClicked()
     m_capture->start(addr, m_countSpin->value());
 }
 
+void MainWindow::captureBlitTraffic()
+{
+    if (!m_rdb || !m_rdb->isConnected())
+        return;
+    m_liveTimer->stop();                 // don't interleave live polls with the run window
+    m_captureLabel->setStyleSheet(QString());
+    m_captureLabel->setText(QStringLiteral("blit trace: running…"));
+    m_actBlitCapture->setEnabled(false);
+
+    // Enable the tap (clears the buffer), let the machine run a short window, then
+    // break, dump the trace, and disable the tap again. The tap is opt-in, so it
+    // perturbs nothing while off.
+    m_rdb->sendCommand("blittrace on");
+    m_rdb->run();
+    constexpr int kBlitWindowMs = 500;
+    QTimer::singleShot(kBlitWindowMs, this, [this] {
+        m_rdb->breakExec([this](const RdbClient::Tokens &) {
+            m_rdb->sendCommand("blittrace", [this](const RdbClient::Tokens &r) {
+                const QVector<BlitOp> ops = BlitterTrace::parse(r);
+                m_blitView->setOps(ops);
+                m_rdb->sendCommand("blittrace off");
+
+                int reads = 0, writes = 0, blits = 0;
+                for (const auto &op : ops) {
+                    reads += op.reads();
+                    writes += op.writes();
+                    if (op.endCycle != 0)
+                        ++blits;
+                }
+                if (reads + writes > 0) {
+                    m_captureLabel->setStyleSheet(QStringLiteral("color:#2e7d32;"));   // green
+                    m_captureLabel->setText(
+                        QStringLiteral("blit trace: %1 blits · %2 rd · %3 wr ✓")
+                            .arg(blits).arg(reads).arg(writes));
+                } else {
+                    m_captureLabel->setStyleSheet(QStringLiteral("color:#c62828;"));   // red
+                    m_captureLabel->setText(
+                        QStringLiteral("blit trace: no blitter traffic in the run window"));
+                }
+                m_actBlitCapture->setEnabled(true);
+                refresh();                                   // fresh frame after the break
+                if (m_actLive->isChecked())
+                    m_liveTimer->start();
+            });
+        });
+    });
+}
+
 void MainWindow::onCaptureProgress(int count, int target)
 {
     m_captureLabel->setText(QStringLiteral("capture $%1: %2/%3…")
@@ -677,6 +741,7 @@ void MainWindow::setControlsEnabledForCapture(bool capturing)
     m_actRunToLine->setEnabled(en);
     m_lineSpin->setEnabled(en);
     m_actCapture->setEnabled(en);
+    m_actBlitCapture->setEnabled(en);
     m_regEdit->setEnabled(en);
     m_countSpin->setEnabled(en);
 }
@@ -691,6 +756,7 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_actRunToLine->setEnabled(connected);
     m_lineSpin->setEnabled(connected);
     m_actCapture->setEnabled(connected);
+    m_actBlitCapture->setEnabled(connected);
     m_regEdit->setEnabled(connected);
     m_countSpin->setEnabled(connected);
 }

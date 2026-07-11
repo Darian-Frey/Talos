@@ -29,3 +29,11 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-lborder/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-lborder/AUTO/LB.PRG" \
   "${REPO_ROOT}/tests/effects/lborder.s"
 echo ">> built tests/effects/disk-lborder/AUTO/LB.PRG"
+
+# blitfill: continuous blitter copies (F-208), for the blitter-traffic view.
+# Needs a machine with a blitter (STE / Mega ST / Mega STE).
+mkdir -p "${REPO_ROOT}/tests/effects/disk-blit/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-blit/AUTO/BLIT.PRG" \
+  "${REPO_ROOT}/tests/effects/blitfill.s"
+echo ">> built tests/effects/disk-blit/AUTO/BLIT.PRG"

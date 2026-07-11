@@ -1,0 +1,170 @@
+diff --git a/src/blitter.c b/src/blitter.c
+index 09510107..2828e226 100644
+--- a/src/blitter.c
++++ b/src/blitter.c
+@@ -419,6 +419,37 @@ static void Blitter_BusArbitration ( int RequestBusMode )
+ 
+ 
+ 
++/* --- Talos B2 (F-208): opt-in blitter memory-traffic trace ---------------- */
++/* See blitter.h. Disabled by default; Blitter_Trace_Add() early-returns when  */
++/* off and only writes a host-side buffer, so it never perturbs emulation.     */
++#define BLITTER_TRACE_MAX	16384
++static BLITTER_TRACE_ENTRY	BlitterTrace[BLITTER_TRACE_MAX];
++static uint32_t			BlitterTraceCount;
++static bool			BlitterTraceEnabled;
++
++static void Blitter_Trace_Add ( uint32_t addr , uint16_t value , uint16_t flags )
++{
++	if ( !BlitterTraceEnabled || BlitterTraceCount >= BLITTER_TRACE_MAX )
++		return;
++	BlitterTrace[BlitterTraceCount].addr  = addr;
++	BlitterTrace[BlitterTraceCount].cycle = CyclesGlobalClockCounter;
++	BlitterTrace[BlitterTraceCount].value = value;
++	BlitterTrace[BlitterTraceCount].flags = flags;
++	BlitterTraceCount++;
++}
++
++void Blitter_Trace_SetEnabled ( bool on )
++{
++	BlitterTraceEnabled = on;
++	if ( on )
++		BlitterTraceCount = 0;			/* fresh capture on enable */
++}
++bool Blitter_Trace_IsEnabled ( void )		{ return BlitterTraceEnabled; }
++void Blitter_Trace_Clear ( void )		{ BlitterTraceCount = 0; }
++uint32_t Blitter_Trace_GetCount ( void )	{ return BlitterTraceCount; }
++const BLITTER_TRACE_ENTRY *Blitter_Trace_GetEntries ( void )	{ return BlitterTrace; }
++
++
+ /*-----------------------------------------------------------------------*/
+ /**
+  * Low level memory accesses to read / write a word
+@@ -435,6 +466,7 @@ static uint16_t Blitter_ReadWord(uint32_t addr)
+ 	Blitter_FlushCycles();
+ 
+ 	BlitterState.bus_word = value;
++	Blitter_Trace_Add ( addr , value , 0 );		/* Talos B2 (F-208): read */
+ 	return value;
+ }
+ 
+@@ -447,6 +479,8 @@ static void Blitter_WriteWord(uint32_t addr, uint16_t value)
+ 	BlitterState.CountBusBlitter++;
+ 	Blitter_AddCycles ( BLITTER_CYCLES_PER_BUS_WRITE );
+ 	Blitter_FlushCycles();
++
++	Blitter_Trace_Add ( addr , value , BLITTER_TRACE_FLAG_WRITE );	/* Talos B2 (F-208): write */
+ }
+ 
+ 
+@@ -906,6 +940,10 @@ Video_GetPosition ( &FrameCycles , &HblCounterVideo , &LineCycles );
+ 
+ 	if (BlitterRegs.y_count == 0)
+ 	{
++		/* Talos B2 (F-208): mark the true end-of-blit boundary so the client
++		 * can delimit operations (a non-hog blit spans several bursts). */
++		Blitter_Trace_Add ( 0 , 0 , BLITTER_TRACE_FLAG_MARKER );
++
+ 		/* Blit complete, clear busy and hog bits */
+ 		BlitterRegs.ctrl &= ~(0x80|0x40);
+ 
+diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
+index 3b23085d..63919571 100644
+--- a/src/debug/remotedebug.c
++++ b/src/debug/remotedebug.c
+@@ -1098,6 +1098,56 @@ typedef struct
+ } rdbcommand_t;
+ 
+ /* Array of all remote debug command descriptors */
++/**
++ * Talos B2 (F-208): blitter memory-traffic trace.
++ *
++ *   blittrace on           enable + clear the trace  -> "OK"
++ *   blittrace off          disable                   -> "OK"
++ *   blittrace clear        clear without disabling    -> "OK"
++ *   blittrace              dump accumulated entries:
++ *     "OK" <sep> <count:hex>
++ *       then per entry:  <sep> addr <sep> cycle_hi <sep> cycle_lo <sep> value <sep> flags
++ *   flags bit0 = write (else read), bit1 = blit-complete marker.
++ */
++static int RemoteDebug_blittrace(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc >= 2)
++	{
++		if (strcmp(psArgs[1], "on") == 0)
++			Blitter_Trace_SetEnabled(true);
++		else if (strcmp(psArgs[1], "off") == 0)
++			Blitter_Trace_SetEnabled(false);
++		else if (strcmp(psArgs[1], "clear") == 0)
++			Blitter_Trace_Clear();
++		else
++			return 1;			/* unknown sub-command */
++		send_str(state, "OK");
++		return 0;
++	}
++
++	/* No sub-command: dump the accumulated trace. */
++	const BLITTER_TRACE_ENTRY* entries = Blitter_Trace_GetEntries();
++	uint32_t count = Blitter_Trace_GetCount();
++
++	send_str(state, "OK");
++	send_sep(state);
++	send_hex(state, count);
++	for (uint32_t i = 0; i < count; ++i)
++	{
++		send_sep(state);
++		send_hex(state, entries[i].addr);
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle >> 32));
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle & 0xffffffff));
++		send_sep(state);
++		send_hex(state, entries[i].value);
++		send_sep(state);
++		send_hex(state, entries[i].flags);
++	}
++	return 0;					/* ProcessBuffer appends the terminator */
++}
++
+ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_status,	"status"	, true		},
+ 	{ RemoteDebug_break,	"break"		, true		},
+@@ -1120,6 +1170,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_ffwd,		"ffwd"		, true		},
+ 	{ RemoteDebug_memfind,	"memfind"	, true		},
+ 	{ RemoteDebug_savebin,	"savebin"	, true		},
++	{ RemoteDebug_blittrace,"blittrace"	, true		},
+ 
+ 	/* Terminator */
+ 	{ NULL, NULL }
+diff --git a/src/includes/blitter.h b/src/includes/blitter.h
+index 9b363eb2..b5f388c1 100644
+--- a/src/includes/blitter.h
++++ b/src/includes/blitter.h
+@@ -94,4 +94,26 @@ extern void Blitter_HOG_CPU_do_cycles_after ( int cycles );
+ /* Sync memory/state that might need to be inspected by the Remote Debug system */
+ extern void Blitter_RemoteDebugSync(void);
+ 
++/* --- Talos B2 (F-208): opt-in blitter memory-traffic trace ---------------- */
++/* Records each blitter bus access so the remote-debug client can visualise   */
++/* per-operation memory traffic and bus occupancy. Off by default; enabling    */
++/* only fills a host-side buffer and never touches emulated cycles or memory,  */
++/* so it does not perturb emulation (keeps the D-009 diff harness honest).     */
++typedef struct
++{
++	uint32_t	addr;		/* access address (marker: 0) */
++	uint64_t	cycle;		/* CyclesGlobalClockCounter at the event */
++	uint16_t	value;		/* data word (marker: 0) */
++	uint16_t	flags;		/* bit0: 1=write 0=read; bit1: blit-complete marker */
++} BLITTER_TRACE_ENTRY;
++
++#define BLITTER_TRACE_FLAG_WRITE	(1 << 0)
++#define BLITTER_TRACE_FLAG_MARKER	(1 << 1)
++
++extern void			Blitter_Trace_SetEnabled ( bool on );
++extern bool			Blitter_Trace_IsEnabled ( void );
++extern void			Blitter_Trace_Clear ( void );
++extern uint32_t			Blitter_Trace_GetCount ( void );
++extern const BLITTER_TRACE_ENTRY *Blitter_Trace_GetEntries ( void );
++
+ #endif /* BLITTER_H */

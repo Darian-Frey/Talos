@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), reading `src/debug/remotedebug.c` + `src/debug/vars.c` in tattlemuss/hatari @ 9832e006, 2026-07-09.
-> **Last reviewed:** 2026-07-09
+> **Last reviewed:** 2026-07-11
 > **Why this status:** Command set and beam-data path verified from source. Exact response payloads (per-command field order) still need a line-by-line read of each handler before the client parser is written.
 
 ---
@@ -86,6 +86,34 @@ tagged with its cycle while running at full speed*. B1 only surfaces the counter
 when the emulation is stopped, so the live timeline of a whole frame at speed
 needs the register-write tap (B2, ARCHITECTURE §3) + a new packet. Escalate then,
 per D-005 — and measure the socket bandwidth there (C-004, D-004 reversal test).
+
+## B2 extensions (fork patches) — added by Talos
+
+These commands do **not** exist in stock Hatari; they are added by the Talos
+patch series under `patches/` (see that dir's README). Documented here so the
+one wire format lives in one place.
+
+### `blittrace` — blitter memory-traffic trace (F-208, `patches/0001-*`)
+
+Backs the Blitter traffic view. Opt-in and off by default, so it never perturbs
+emulation (the D-009 diff harness stays valid). Framing is the standard one
+(`0x1`-separated tokens, `0x0`-terminated; reply starts `OK`/`NG`).
+
+| Form | Effect | Reply |
+|---|---|---|
+| `blittrace on` | enable + clear the trace buffer | `OK` |
+| `blittrace off` | disable | `OK` |
+| `blittrace clear` | clear without disabling | `OK` |
+| `blittrace` | dump accumulated entries | see below |
+| `blittrace <other>` | unknown sub-command | `NG 1` |
+
+Dump reply: `OK` `0x1` `<count:hex>` then, per entry, five `0x1`-separated hex
+tokens — `addr` `cycle_hi` `cycle_lo` `value` `flags`. `flags` bit0 = write
+(else read); bit1 = **blit-complete marker** (closes an operation — a non-hog
+blit spans several bus bursts but yields one marker at the true end-of-blit).
+The buffer caps at 16384 entries. Taps: `blitter.c` `Blitter_ReadWord` /
+`Blitter_WriteWord` (each memory access) and the `y_count==0` branch of
+`Blitter_Start` (the marker); `cycle` is `CyclesGlobalClockCounter`.
 
 ## Function seam noted for the B2 video tap
 
