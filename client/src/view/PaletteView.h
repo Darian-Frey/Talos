@@ -19,9 +19,11 @@ public:
     void setPalette(const QVector<QColor> &colours, const QVector<quint16> &regs,
                     const QString &machineName, int colourCount, int bitsPerGun);
 
+    QSize sizeHint() const override { return {240, 196}; }        // content height
+    QSize minimumSizeHint() const override { return {200, 196}; }
+
 protected:
     void paintEvent(QPaintEvent *event) override;
-    QSize minimumSizeHint() const override { return {240, 260}; }
 
 private:
     QVector<QColor> m_colours;

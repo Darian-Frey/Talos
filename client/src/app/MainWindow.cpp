@@ -181,6 +181,9 @@ void MainWindow::buildUi()
     m_regTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_regTable->setSelectionMode(QAbstractItemView::NoSelection);
     m_regTable->setMinimumWidth(220);
+    // The register table is the stretchy panel: it refills whatever the
+    // content-sized Machine/Palette panels leave, and scrolls past that.
+    m_regTable->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
 
     auto *dock = new CollapsibleDock(QStringLiteral("Registers / counters"), m_regTable, this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
@@ -208,6 +211,9 @@ void MainWindow::buildUi()
     m_capsLabel->setMargin(8);
     m_capsLabel->setTextFormat(Qt::RichText);
     m_capsLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    // Content-sized (capped at its text height) so it doesn't compete with the
+    // register table for the leftover space.
+    m_capsLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
     auto *capsDock = new CollapsibleDock(QStringLiteral("Machine"), m_capsLabel, this);
     capsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, capsDock);
@@ -217,6 +223,10 @@ void MainWindow::buildUi()
     auto *palDock = new CollapsibleDock(QStringLiteral("Palette"), m_palette, this);
     palDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, palDock);
+
+    // Initial split: give the register table the bulk; Machine/Palette settle at
+    // their content height (their Maximum vertical policy caps them there).
+    resizeDocks({dock, capsDock, palDock}, {600, 140, 200}, Qt::Vertical);
 
     m_captureLabel = new QLabel(QString(), this);
     statusBar()->addWidget(m_captureLabel);   // left, persistent (not a timed message)

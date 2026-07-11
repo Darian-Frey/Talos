@@ -23,5 +23,4 @@ private:
     QToolButton *m_toggle = nullptr;
     QWidget *m_content = nullptr;
     bool m_collapsed = false;
-    int m_expandedHeight = 0;   // remembered so expand restores a sane size
 };

@@ -8,6 +8,9 @@
 PaletteView::PaletteView(QWidget *parent)
     : QWidget(parent)
 {
+    // Content-sized: take our sizeHint height and no more, so the register
+    // table (Expanding) gets the leftover space rather than this panel.
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
 }
 
 void PaletteView::setPalette(const QVector<QColor> &colours,

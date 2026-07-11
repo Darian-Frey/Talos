@@ -46,14 +46,14 @@ void CollapsibleDock::setCollapsed(bool collapsed)
     m_toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
 
     if (collapsed) {
-        m_expandedHeight = height();
         m_content->setVisible(false);
         setFixedHeight(titleBarWidget()->sizeHint().height());
     } else {
         m_content->setVisible(true);
         setMinimumHeight(0);
         setMaximumHeight(QWIDGETSIZE_MAX);
-        if (m_expandedHeight > 0)
-            resize(width(), m_expandedHeight);
+        // Height is restored by the content's own size policy: content-sized
+        // panels return to their natural height, the register table refills
+        // whatever the others leave. No manual resize() (ignored in a dock).
     }
 }
