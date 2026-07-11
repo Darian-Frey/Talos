@@ -1,8 +1,10 @@
 #include "MainWindow.h"
 
 #include "capture/CaptureController.h"
+#include "model/Palette.h"
 #include "protocol/RdbClient.h"
 #include "view/FramebufferView.h"
+#include "view/PaletteView.h"
 
 #include <QAction>
 #include <QColor>
@@ -205,6 +207,13 @@ void MainWindow::buildUi()
     capsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, capsDock);
 
+    // Palette panel (F-204/F-207): the ST 512 <-> STE 4096 differential.
+    m_palette = new PaletteView(this);
+    auto *palDock = new QDockWidget(QStringLiteral("Palette"), this);
+    palDock->setWidget(m_palette);
+    palDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, palDock);
+
     m_captureLabel = new QLabel(QString(), this);
     statusBar()->addWidget(m_captureLabel);   // left, persistent (not a timed message)
 
@@ -389,6 +398,23 @@ void MainWindow::refresh()
     // Chain regs -> screenshot so the beam overlay is computed from the register
     // snapshot that matches the frame we then grab.
     refreshRegs();
+    refreshPalette();
+}
+
+void MainWindow::refreshPalette()
+{
+    m_rdb->sendCommand("mem ff8240 20", [this](const RdbClient::Tokens &r) {
+        if (r.size() < 4 || r.first() != "OK")
+            return;
+        const QVector<quint16> regs = Palette::readRegisters(r.last());
+        QVector<QColor> colours;
+        colours.reserve(regs.size());
+        for (quint16 v : regs)
+            colours.append(Palette::decode(v));
+        const MachineInfo &mi = Machines::info(m_machine);
+        const int bits = (mi.paletteColours >= 4096) ? 4 : 3;
+        m_palette->setPalette(colours, regs, mi.name, mi.paletteColours, bits);
+    });
 }
 
 void MainWindow::refreshRegs()

@@ -45,11 +45,20 @@ Region maps to Hatari's `--country`: `us` = 60 Hz NTSC, `de` = 50 Hz PAL.
 
 Verified: ST/PAL, STE/NTSC and Mega STE/PAL all launch, boot and capture a frame.
 
+## Palette panel (the differential showpiece) — done
+
+`view/PaletteView` + `model/Palette` read the 16 colour registers (`mem ff8240 20`)
+and decode them exactly as Hatari does (`Screen_SetupRGBTable`): each 4-bit gun
+nibble reordered per the C-008 quirk (bit 3 = LSB) then scaled 4→8 bit. The dock
+shows the 16 live swatches (with `$rgb` values), a header (`512`/`4096` colours,
+`3`/`4` bits/gun) and a per-gun intensity ramp at the machine's resolution.
+
+Verified against real boots: ST default `[0]=$777` → white 238; STE `[0]=$fff` →
+white 255 (bit 3 used). Switching ST↔STE shows the palette gain the 4th bit and
+the ramp go 8→16 levels — the 512↔4096 differential, legible at a glance.
+
 ## Next (this phase)
 
-- **Palette panel** — read the 16 colour registers and decode per machine: ST 512
-  (3 bits/gun) vs STE 4096 (4 bits/gun, LSB-in-top-bit quirk, C-008). Switching
-  ST↔STE then *visibly* collapses 4096→512 — the differential-view showpiece.
 - **Capability gating** — grey out controls/panels for absent hardware as the
   Blitter/DMA/scroll panels are built (mostly Phase 3 surface).
 - Read the region back from the core (`$ff820a`) rather than only setting it.

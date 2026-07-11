@@ -18,6 +18,7 @@
 
 class RdbClient;
 class FramebufferView;
+class PaletteView;
 class CaptureController;
 class QImage;
 class QAction;
@@ -87,6 +88,7 @@ private:
     void setRunningControlsEnabled(bool connected);
     void refreshScreen();
     void refreshRegs();
+    void refreshPalette();
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
     void recomputeWriteMarks(QSize frameSize);
     void populateTimeline();
@@ -96,6 +98,7 @@ private:
     RdbClient *m_rdb = nullptr;
     HatariLauncher *m_launcher = nullptr;
     FramebufferView *m_fb = nullptr;
+    PaletteView *m_palette = nullptr;
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;
     QTemporaryDir m_shotDir;

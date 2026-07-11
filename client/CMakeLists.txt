@@ -19,6 +19,7 @@ add_executable(talos
   src/model/MachineState.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
+  src/view/PaletteView.cpp
   src/capture/CaptureController.cpp
 )
 
