@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Design session with Claude (primary architect/auditor).
-> **Last reviewed:** 2026-07-08
+> **Last reviewed:** 2026-07-11
 > **Why this status:** Registers seeded from the `Atari_tools.md` scope and extended with items surfaced by the architecture work. Append-only from here.
 
 ---
@@ -20,7 +20,7 @@ Append-only. Feature IDs (F-NNN) continue the Talos numbering established in `At
 - **F-207** Differential view: flip machine/region and show capabilities/timing appearing or collapsing.
 - **F-208** Blitter memory-traffic visualisation. *(B2)*
 - **F-209** DMA sound buffer-drain + LMC1992 EQ-curve visualisation. *(B2)*
-- **F-210** Mega STE dual-speed (8/16 MHz) demonstration.
+- **F-210** Mega STE dual-speed (8/16 MHz) demonstration: toggle the CPU speed and watch whether a raster effect holds or breaks as the per-line cycle budget changes. Scope: the two global speed settings only, *not* intra-setting cache/bus bimodality, which Hatari does not model (see C-005, BUG-008).
 - **F-211** Effect prototyping workspace (raster bars, Spectrum 512, hardware scrollers).
 - **F-212** Export effect as register sequence / asm stub; "verify on Hatari" round-trip.
 - **F-213** Per-scanline framebuffer diff harness against stock Hatari (validation / regression).
@@ -36,7 +36,7 @@ Append-only. Feature IDs (F-NNN) continue the Talos numbering established in `At
 - **C-002** B2 fork divergence from mainline Hatari must be kept minimal and rebasable; every B2 patch is justified only by a specific feature that B1 cannot serve (per D-005).
 - **C-003** The candidate tap points (ARCHITECTURE §3) are indicative and **must be confirmed against the actual fork source in Phase 0** before B2 estimates are trusted.
 - **C-004** Socket bandwidth for per-cycle event streams is unproven; it is the measured risk of Phase 1 and the trigger for the D-004 reversal (single-process embedding).
-- **C-005** The Mega STE is dual-speed (16 MHz cache-resident, 8 MHz on ST-side bus access); raster cycle-counting is bimodal and both regimes must be represented, not averaged. *(= `Atari_tools.md` C-006.)*
+- **C-005** The Mega STE is dual-speed (16 MHz cache-resident, 8 MHz on ST-side bus access); raster cycle-counting is bimodal and both regimes must be represented, not averaged. Operationally, "both regimes" means the two global speed settings (8 and 16 MHz) as Hatari models them via `nCpuFreqShift`; the finer per-access cache-resident-16/bus-access-8 bimodality is real hardware behaviour that Hatari does not emulate, so it is out of scope for visualisation (see BUG-008, D-002). *(= `Atari_tools.md` C-006.)*
 - **C-006** Hatari is GPLv2; the fork, its patches, and a co-distributed Talos are treated as GPL. A non-GPL requirement forces Phase 5. *(= `Atari_tools.md` C-007; see D-010.)*
 - **C-007** All timing constants (cycles-per-line, border windows, STE prefetch offsets, wakeup-state shifts) are sourced from authoritative references and bench-validated; where possible they are *read from Hatari* rather than hard-coded, to stay consistent with the instrumented core. *(= `Atari_tools.md` C-008.)*
 - **C-008** The STE palette bit-order quirk (LSB of intensity stored as the top bit of each nibble) must be honoured in every palette decode path; it is a concrete correctness test, not an incidental detail. *(Relates to `Atari_tools.md` C-005.)*

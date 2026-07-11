@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), opened 2026-07-10 during Phase 1.
-> **Last reviewed:** 2026-07-10
+> **Last reviewed:** 2026-07-11
 > **Why this status:** Live register of open issues and by-design limitations. Fixed bugs are not tracked here — they live in git history.
 
 ---
@@ -66,3 +66,17 @@ Status: Open · Severity: Low · Area: session, tests/effects
 EmuTOS shows a welcome screen and only runs `AUTO` programs ~10–14 s into boot.
 The launcher waits blindly. Could skip the welcome screen or fast-forward boot,
 and detect "effect running" (PC in the program) rather than sleeping.
+
+**BUG-008 — Mega STE dual-speed is a flat toggle; per-access bimodality is not visualisable.**
+Status: Won't-fix (by design) · Severity: Low · Area: view (planned F-210), docs
+Hatari models Mega STE speed as a single global 8/16 MHz toggle: bit 1 of `$FF8E21`
+scales the per-raster-line cycle budget (`<< nCpuFreqShift`), while bit 0 (the
+cache) is ignored — *"we handle only bit 1, bit 0 is ignored (cache is not
+emulated)"* (`external/hatari/src/ioMemTabSTE.c:35`; every 8↔16 switch funnels
+through `Configuration_ChangeCpuFreq`, `configuration.c:1260`). The real machine's
+per-access behaviour (16 MHz on cache hits, dropping to 8 MHz on ST-bus accesses)
+is therefore absent from the core. F-210 visualises the two speed *settings* and
+their raster-budget effect — an effect that holds at one and breaks at the other —
+but cannot honestly show intra-setting cache/bus bimodality: synthesising it would
+mean adding emulation Hatari lacks, forbidden by D-002. Not a defect but a bound on
+what the visualiser can truthfully show; records the C-005 clarification.
