@@ -86,6 +86,12 @@ void MainWindow::buildUi()
     setWindowTitle(QStringLiteral("Talos — M0"));
     resize(900, 640);
 
+    // Make the dock separators (the drag handles between panels) clearly visible,
+    // so panel boundaries read and re-docking targets are obvious.
+    setStyleSheet(QStringLiteral(
+        "QMainWindow::separator { background: palette(mid); width: 5px; height: 5px; }"
+        "QMainWindow::separator:hover { background: palette(highlight); }"));
+
     auto *tb = addToolBar(QStringLiteral("Controls"));
     tb->setMovable(false);
 

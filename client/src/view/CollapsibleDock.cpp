@@ -11,8 +11,15 @@ CollapsibleDock::CollapsibleDock(const QString &title, QWidget *content, QWidget
     setWidget(content);
 
     auto *bar = new QWidget(this);
+    bar->setObjectName(QStringLiteral("dockTitleBar"));
+    // A header look with top/bottom borders so adjacent panels are clearly
+    // separated (theme-aware via palette roles).
+    bar->setStyleSheet(QStringLiteral(
+        "#dockTitleBar { background: palette(button);"
+        " border-top: 1px solid palette(dark);"
+        " border-bottom: 1px solid palette(dark); }"));
     auto *lay = new QHBoxLayout(bar);
-    lay->setContentsMargins(4, 2, 4, 2);
+    lay->setContentsMargins(4, 3, 4, 3);
     lay->setSpacing(6);
 
     m_toggle = new QToolButton(bar);
