@@ -21,6 +21,7 @@ public:
         QString hatariBinary;         // path to the fork's `hatari` executable
         QString tosImage;             // path to TOS/EmuTOS ROM (C-009, user-supplied)
         QString machine = "st";       // st | ste | megast | megaste | tt | falcon
+        QString country;              // EmuTOS country -> PAL/NTSC (us=NTSC, de=PAL)
         bool headless = false;        // run with dummy SDL video/audio (no window)
         bool hideStatusBar = true;    // hide Hatari's own status-bar overlay
         quint16 remotePort = 56001;   // fixed by the fork (RDB_PORT)

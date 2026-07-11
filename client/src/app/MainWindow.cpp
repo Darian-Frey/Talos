@@ -6,6 +6,7 @@
 
 #include <QAction>
 #include <QColor>
+#include <QComboBox>
 #include <QDir>
 #include <QDockWidget>
 #include <QHeaderView>
@@ -39,6 +40,8 @@ MainWindow::MainWindow(Config config, QWidget *parent)
     , m_launcher(new HatariLauncher(this))
     , m_liveTimer(new QTimer(this))
 {
+    m_machine = m_config.machine;
+    m_region = m_config.region;
     if (m_shotDir.isValid())
         m_shotPath = QDir(m_shotDir.path()).filePath("frame.png");
 
@@ -72,6 +75,19 @@ void MainWindow::buildUi()
 
     auto *tb = addToolBar(QStringLiteral("Controls"));
     tb->setMovable(false);
+
+    // Machine + region selectors (F-205/F-206): changing them (re)configures the
+    // machine — a relaunch when connected.
+    m_machineCombo = new QComboBox(this);
+    for (MachineType t : Machines::all())
+        m_machineCombo->addItem(Machines::info(t).name);
+    m_machineCombo->setToolTip(QStringLiteral("Machine type"));
+    tb->addWidget(m_machineCombo);
+    m_regionCombo = new QComboBox(this);
+    m_regionCombo->addItems({QStringLiteral("PAL"), QStringLiteral("NTSC")});
+    m_regionCombo->setToolTip(QStringLiteral("Video region (50/60 Hz)"));
+    tb->addWidget(m_regionCombo);
+    tb->addSeparator();
 
     m_actStart = tb->addAction(m_config.attachOnly ? QStringLiteral("Connect")
                                                     : QStringLiteral("Launch"));
@@ -160,6 +176,16 @@ void MainWindow::buildUi()
     tdock->setWidget(m_timeline);
     addDockWidget(Qt::BottomDockWidgetArea, tdock);
 
+    // Machine capabilities / differential view (F-207).
+    m_capsLabel = new QLabel(this);
+    m_capsLabel->setMargin(8);
+    m_capsLabel->setTextFormat(Qt::RichText);
+    m_capsLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    auto *capsDock = new QDockWidget(QStringLiteral("Machine"), this);
+    capsDock->setWidget(m_capsLabel);
+    capsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, capsDock);
+
     m_captureLabel = new QLabel(QString(), this);
     statusBar()->addWidget(m_captureLabel);   // left, persistent (not a timed message)
 
@@ -167,6 +193,16 @@ void MainWindow::buildUi()
     m_posLabel = new QLabel(QString(), this);
     statusBar()->addPermanentWidget(m_posLabel);
     statusBar()->addPermanentWidget(m_connLabel);
+
+    // Set the initial selection, then wire the change signals (so no spurious
+    // relaunch fires during construction).
+    m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
+    m_regionCombo->setCurrentIndex(m_region == VideoRegion::Ntsc60 ? 1 : 0);
+    connect(m_machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onMachineChanged);
+    connect(m_regionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onRegionChanged);
+    updateCapabilities();
 }
 
 void MainWindow::startSession()
@@ -177,12 +213,73 @@ void MainWindow::startSession()
 void MainWindow::onStartClicked()
 {
     if (!m_config.attachOnly) {
+        m_config.hatari.machine = Machines::info(m_machine).hatariMachine;
+        m_config.hatari.country = regionCountry(m_region);
         if (!m_launcher->launch(m_config.hatari))
             return;
-        statusBar()->showMessage(QStringLiteral("Launching Hatari…"));
+        statusBar()->showMessage(QStringLiteral("Launching %1 (%2)…")
+                                     .arg(Machines::info(m_machine).name,
+                                          regionName(m_region)));
     }
     m_connLabel->setText(QStringLiteral("connecting…"));
     m_rdb->connectToHatari(m_config.host, m_config.hatari.remotePort);
+}
+
+void MainWindow::onMachineChanged(int index)
+{
+    const auto machines = Machines::all();
+    if (index < 0 || index >= machines.size())
+        return;
+    m_machine = machines[index];
+    updateCapabilities();
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+}
+
+void MainWindow::onRegionChanged(int index)
+{
+    m_region = (index == 1) ? VideoRegion::Ntsc60 : VideoRegion::Pal50;
+    updateCapabilities();
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+}
+
+void MainWindow::relaunch()
+{
+    if (m_config.attachOnly) {
+        statusBar()->showMessage(
+            QStringLiteral("Can't change machine/region of an attached Hatari."), 5000);
+        return;
+    }
+    m_liveTimer->stop();
+    m_rdb->disconnectFromHatari();
+    m_launcher->terminate();
+    // Drop the previous machine's state so nothing stale is shown.
+    m_fb->setImage(QImage());
+    m_fb->setWriteMarks({});
+    m_writes.clear();
+    m_timeline->setRowCount(0);
+    setRunningControlsEnabled(false);
+    onStartClicked();
+}
+
+void MainWindow::updateCapabilities()
+{
+    const MachineInfo &m = Machines::info(m_machine);
+    auto row = [](const QString &name, bool on, const QString &detail = QString()) {
+        const QString mark = on ? QStringLiteral("<b style='color:#2e7d32'>✓</b>")
+                                : QStringLiteral("<span style='color:#999'>✗</span>");
+        return QStringLiteral("%1&nbsp; %2 %3<br>").arg(mark, name, detail);
+    };
+    m_capsLabel->setText(
+        QStringLiteral("<b>%1</b> &middot; %2<br><br>")
+            .arg(m.name, regionName(m_region))
+        + row(QStringLiteral("Blitter"), m.blitter)
+        + row(QStringLiteral("Palette"), true,
+              QStringLiteral("<b>%1</b> colours").arg(m.paletteColours))
+        + row(QStringLiteral("Hardware scroll"), m.hardwareScroll)
+        + row(QStringLiteral("DMA sound"), m.dmaSound)
+        + row(QStringLiteral("Dual-speed 16&nbsp;MHz"), m.dualSpeed));
 }
 
 void MainWindow::onConnected()

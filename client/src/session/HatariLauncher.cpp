@@ -56,6 +56,8 @@ bool HatariLauncher::launch(const Config &cfg)
     args << "--machine" << cfg.machine
          << "--tos" << cfg.tosImage
          << "--sound" << "off";
+    if (!cfg.country.isEmpty())
+        args << "--country" << cfg.country;   // selects PAL/NTSC via the TOS
     if (cfg.hideStatusBar)
         args << "--statusbar" << "off";
     if (!cfg.gemdosDir.isEmpty())

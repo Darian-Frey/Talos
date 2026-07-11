@@ -51,10 +51,11 @@ int main(int argc, char *argv[])
         qEnvironmentVariable("TALOS_HATARI",
                              guessRepoRelative("external/hatari/build/src/hatari")));
     const QCommandLineOption optTos(
-        "tos", "Path to a TOS/EmuTOS ROM image.", "path",
-        qEnvironmentVariable("TALOS_TOS", guessRepoRelative("tos/etos512uk.img")));
-    const QCommandLineOption optMachine("machine", "Machine: st|ste|megast|megaste.",
+        "tos", "Path to a TOS/EmuTOS ROM image (multi-language for region switching).",
+        "path", qEnvironmentVariable("TALOS_TOS", guessRepoRelative("tos/etos1024k.img")));
+    const QCommandLineOption optMachine("machine", "Machine: st|megast|ste|megaste.",
                                         "type", "st");
+    const QCommandLineOption optRegion("region", "Region: pal|ntsc.", "r", "pal");
     const QCommandLineOption optHeadless("headless",
                                          "Run Hatari off-screen (no Hatari window).");
     const QCommandLineOption optAttach(
@@ -77,8 +78,8 @@ int main(int argc, char *argv[])
         "png");
     const QCommandLineOption optCaptureReg(
         "capture-reg", "Register (hex) for --selftest-capture.", "hex", "ffff8240");
-    parser.addOptions({optHatari, optTos, optMachine, optHeadless, optAttach, optHost,
-                       optEffect, optSelftest, optSelftestCapture, optCaptureReg});
+    parser.addOptions({optHatari, optTos, optMachine, optRegion, optHeadless, optAttach,
+                       optHost, optEffect, optSelftest, optSelftestCapture, optCaptureReg});
     parser.process(app);
 
     MainWindow::Config cfg;
@@ -86,8 +87,17 @@ int main(int argc, char *argv[])
     cfg.host = parser.value(optHost);
     cfg.hatari.hatariBinary = parser.value(optHatari);
     cfg.hatari.tosImage = parser.value(optTos);
-    cfg.hatari.machine = parser.value(optMachine);
     cfg.hatari.headless = parser.isSet(optHeadless);
+    // Seed the initial machine/region from the CLI (the GUI combos take over).
+    for (MachineType t : Machines::all()) {
+        if (Machines::info(t).hatariMachine == parser.value(optMachine)) {
+            cfg.machine = t;
+            break;
+        }
+    }
+    cfg.region = parser.value(optRegion).compare("ntsc", Qt::CaseInsensitive) == 0
+                     ? VideoRegion::Ntsc60
+                     : VideoRegion::Pal50;
     if (parser.isSet(optEffect))
         cfg.hatari.gemdosDir = QFileInfo(parser.value(optEffect)).absoluteFilePath();
 

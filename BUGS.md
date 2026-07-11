@@ -28,10 +28,14 @@ Fixed: `HatariLauncher::Config::cleanConfig` (default on) launches with an empty
 `--configfile`.
 
 **BUG-002 — Region is hard-coded to PAL 50 Hz.**
-Status: Open · Severity: Medium · Area: view/BeamGeometry, app
+Status: Fixed · Severity: Medium · Area: view/BeamGeometry, app
 The beam overlay assumes PAL. NTSC constants exist in `BeamGeometry` but nothing
 selects them, and region is not read from Hatari. Resolve in Phase 2 (machine/
 region selection); prefer reading the region from the core over assuming it.
+Fixed: Phase 2 adds a region selector (PAL/NTSC) that drives both `BeamGeometry`
+and the Hatari boot frequency (via `--country` on the multi-language EmuTOS).
+Follow-up: still *set* rather than *read from the core* — verify against `$ff820a`
+when convenient.
 
 **BUG-003 — Beam geometry assumes ST low resolution.**
 Status: Open · Severity: Medium · Area: view/BeamGeometry
