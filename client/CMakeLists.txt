@@ -20,6 +20,7 @@ add_executable(talos
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
+  src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )
 

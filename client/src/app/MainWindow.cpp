@@ -3,6 +3,7 @@
 #include "capture/CaptureController.h"
 #include "model/Palette.h"
 #include "protocol/RdbClient.h"
+#include "view/CollapsibleDock.h"
 #include "view/FramebufferView.h"
 #include "view/PaletteView.h"
 
@@ -175,8 +176,7 @@ void MainWindow::buildUi()
     m_regTable->setSelectionMode(QAbstractItemView::NoSelection);
     m_regTable->setMinimumWidth(220);
 
-    auto *dock = new QDockWidget(QStringLiteral("Registers / counters"), this);
-    dock->setWidget(m_regTable);
+    auto *dock = new CollapsibleDock(QStringLiteral("Registers / counters"), m_regTable, this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
@@ -193,8 +193,8 @@ void MainWindow::buildUi()
     connect(m_timeline, &QTableWidget::currentCellChanged, this,
             [this](int row, int, int, int) { onTimelineRowChanged(row); });
 
-    auto *tdock = new QDockWidget(QStringLiteral("Register-write timeline"), this);
-    tdock->setWidget(m_timeline);
+    auto *tdock =
+        new CollapsibleDock(QStringLiteral("Register-write timeline"), m_timeline, this);
     addDockWidget(Qt::BottomDockWidgetArea, tdock);
 
     // Machine capabilities / differential view (F-207).
@@ -202,15 +202,13 @@ void MainWindow::buildUi()
     m_capsLabel->setMargin(8);
     m_capsLabel->setTextFormat(Qt::RichText);
     m_capsLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    auto *capsDock = new QDockWidget(QStringLiteral("Machine"), this);
-    capsDock->setWidget(m_capsLabel);
+    auto *capsDock = new CollapsibleDock(QStringLiteral("Machine"), m_capsLabel, this);
     capsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, capsDock);
 
     // Palette panel (F-204/F-207): the ST 512 <-> STE 4096 differential.
     m_palette = new PaletteView(this);
-    auto *palDock = new QDockWidget(QStringLiteral("Palette"), this);
-    palDock->setWidget(m_palette);
+    auto *palDock = new CollapsibleDock(QStringLiteral("Palette"), m_palette, this);
     palDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, palDock);
 
