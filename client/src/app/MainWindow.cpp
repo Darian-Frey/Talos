@@ -42,6 +42,7 @@ MainWindow::MainWindow(Config config, QWidget *parent)
 {
     m_machine = m_config.machine;
     m_region = m_config.region;
+    m_language = m_config.language;
     if (m_shotDir.isValid())
         m_shotPath = QDir(m_shotDir.path()).filePath("frame.png");
 
@@ -52,6 +53,15 @@ MainWindow::MainWindow(Config config, QWidget *parent)
     connect(m_rdb, &RdbClient::notification, this, &MainWindow::onNotification);
     connect(m_launcher, &HatariLauncher::failed, this, [this](const QString &r) {
         statusBar()->showMessage(QStringLiteral("Hatari launch failed: %1").arg(r), 8000);
+        updateLaunchStopState();
+    });
+    // Unexpected Hatari exit (an intentional terminate blocks this signal).
+    connect(m_launcher, &HatariLauncher::stopped, this, [this](int) {
+        m_liveTimer->stop();
+        m_rdb->disconnectFromHatari();
+        setRunningControlsEnabled(false);
+        m_connLabel->setText(QStringLiteral("hatari exited"));
+        updateLaunchStopState();
     });
 
     m_capture = new CaptureController(m_rdb, this);
@@ -83,6 +93,11 @@ void MainWindow::buildUi()
         m_machineCombo->addItem(Machines::info(t).name);
     m_machineCombo->setToolTip(QStringLiteral("Machine type"));
     tb->addWidget(m_machineCombo);
+    m_languageCombo = new QComboBox(this);
+    for (Language l : Languages::all())
+        m_languageCombo->addItem(Languages::info(l).name);
+    m_languageCombo->setToolTip(QStringLiteral("EmuTOS language"));
+    tb->addWidget(m_languageCombo);
     m_regionCombo = new QComboBox(this);
     m_regionCombo->addItems({QStringLiteral("PAL"), QStringLiteral("NTSC")});
     m_regionCombo->setToolTip(QStringLiteral("Video region (50/60 Hz)"));
@@ -92,6 +107,10 @@ void MainWindow::buildUi()
     m_actStart = tb->addAction(m_config.attachOnly ? QStringLiteral("Connect")
                                                     : QStringLiteral("Launch"));
     connect(m_actStart, &QAction::triggered, this, &MainWindow::onStartClicked);
+    m_actStop = tb->addAction(QStringLiteral("Stop"));
+    m_actStop->setToolTip(QStringLiteral("Stop the running machine"));
+    m_actStop->setEnabled(false);
+    connect(m_actStop, &QAction::triggered, this, &MainWindow::doStop);
     tb->addSeparator();
 
     m_actBreak = tb->addAction(QStringLiteral("Break"));
@@ -197,12 +216,16 @@ void MainWindow::buildUi()
     // Set the initial selection, then wire the change signals (so no spurious
     // relaunch fires during construction).
     m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
+    m_languageCombo->setCurrentIndex(Languages::all().indexOf(m_language));
     m_regionCombo->setCurrentIndex(m_region == VideoRegion::Ntsc60 ? 1 : 0);
     connect(m_machineCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onMachineChanged);
+    connect(m_languageCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onLanguageChanged);
     connect(m_regionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onRegionChanged);
-    updateCapabilities();
+    reconcileRegion();       // also calls updateCapabilities()
+    updateLaunchStopState();
 }
 
 void MainWindow::startSession()
@@ -214,15 +237,32 @@ void MainWindow::onStartClicked()
 {
     if (!m_config.attachOnly) {
         m_config.hatari.machine = Machines::info(m_machine).hatariMachine;
-        m_config.hatari.country = regionCountry(m_region);
+        m_config.hatari.country = Languages::country(m_language, m_region);
         if (!m_launcher->launch(m_config.hatari))
             return;
-        statusBar()->showMessage(QStringLiteral("Launching %1 (%2)…")
-                                     .arg(Machines::info(m_machine).name,
-                                          regionName(m_region)));
+        statusBar()->showMessage(
+            QStringLiteral("Launching %1 · %2 · %3…")
+                .arg(Machines::info(m_machine).name,
+                     Languages::info(m_language).name, regionName(m_region)));
     }
     m_connLabel->setText(QStringLiteral("connecting…"));
     m_rdb->connectToHatari(m_config.host, m_config.hatari.remotePort);
+    updateLaunchStopState();
+}
+
+void MainWindow::doStop()
+{
+    m_liveTimer->stop();
+    m_rdb->disconnectFromHatari();
+    if (!m_config.attachOnly)
+        m_launcher->terminate();
+    m_fb->setImage(QImage());
+    m_fb->setWriteMarks({});
+    m_writes.clear();
+    m_timeline->setRowCount(0);
+    setRunningControlsEnabled(false);
+    m_connLabel->setText(QStringLiteral("stopped"));
+    updateLaunchStopState();
 }
 
 void MainWindow::onMachineChanged(int index)
@@ -239,9 +279,35 @@ void MainWindow::onMachineChanged(int index)
 void MainWindow::onRegionChanged(int index)
 {
     m_region = (index == 1) ? VideoRegion::Ntsc60 : VideoRegion::Pal50;
-    updateCapabilities();
+    reconcileRegion();   // a language with no NTSC variant snaps back to PAL
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
+}
+
+void MainWindow::onLanguageChanged(int index)
+{
+    const auto langs = Languages::all();
+    if (index < 0 || index >= langs.size())
+        return;
+    m_language = langs[index];
+    reconcileRegion();
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+}
+
+void MainWindow::reconcileRegion()
+{
+    // The chosen language+region resolves to a --country; if that country boots a
+    // different region (e.g. a PAL-only language while NTSC was picked), snap the
+    // region selector to what will actually boot, so the UI stays honest.
+    const VideoRegion actual =
+        Languages::regionOf(Languages::country(m_language, m_region));
+    if (actual != m_region) {
+        m_region = actual;
+        const QSignalBlocker blocker(m_regionCombo);
+        m_regionCombo->setCurrentIndex(m_region == VideoRegion::Ntsc60 ? 1 : 0);
+    }
+    updateCapabilities();
 }
 
 void MainWindow::relaunch()
@@ -263,6 +329,13 @@ void MainWindow::relaunch()
     onStartClicked();
 }
 
+void MainWindow::updateLaunchStopState()
+{
+    const bool running = m_launcher->isRunning() || m_rdb->isConnected();
+    m_actStart->setEnabled(!running);
+    m_actStop->setEnabled(running);
+}
+
 void MainWindow::updateCapabilities()
 {
     const MachineInfo &m = Machines::info(m_machine);
@@ -272,8 +345,8 @@ void MainWindow::updateCapabilities()
         return QStringLiteral("%1&nbsp; %2 %3<br>").arg(mark, name, detail);
     };
     m_capsLabel->setText(
-        QStringLiteral("<b>%1</b> &middot; %2<br><br>")
-            .arg(m.name, regionName(m_region))
+        QStringLiteral("<b>%1</b> &middot; %2 &middot; %3<br><br>")
+            .arg(m.name, Languages::info(m_language).name, regionName(m_region))
         + row(QStringLiteral("Blitter"), m.blitter)
         + row(QStringLiteral("Palette"), true,
               QStringLiteral("<b>%1</b> colours").arg(m.paletteColours))
@@ -285,6 +358,7 @@ void MainWindow::updateCapabilities()
 void MainWindow::onConnected()
 {
     setRunningControlsEnabled(true);
+    updateLaunchStopState();
     m_connLabel->setText(QStringLiteral("connected · proto 0x%1")
                              .arg(m_rdb->protocolId(), 0, 16));
     statusBar()->showMessage(QStringLiteral("Connected."), 3000);
@@ -297,6 +371,7 @@ void MainWindow::onConnectionFailed(const QString &reason)
 {
     m_connLabel->setText(QStringLiteral("connect failed"));
     statusBar()->showMessage(QStringLiteral("Connection failed: %1").arg(reason), 8000);
+    updateLaunchStopState();
 }
 
 void MainWindow::onNotification(const QByteArray &name, const QList<QByteArray> &args)

@@ -56,6 +56,9 @@ int main(int argc, char *argv[])
     const QCommandLineOption optMachine("machine", "Machine: st|megast|ste|megaste.",
                                         "type", "st");
     const QCommandLineOption optRegion("region", "Region: pal|ntsc.", "r", "pal");
+    const QCommandLineOption optLanguage(
+        "language", "EmuTOS language: english|german|french|spanish|italian|swedish.",
+        "lang", "english");
     const QCommandLineOption optHeadless("headless",
                                          "Run Hatari off-screen (no Hatari window).");
     const QCommandLineOption optAttach(
@@ -78,8 +81,9 @@ int main(int argc, char *argv[])
         "png");
     const QCommandLineOption optCaptureReg(
         "capture-reg", "Register (hex) for --selftest-capture.", "hex", "ffff8240");
-    parser.addOptions({optHatari, optTos, optMachine, optRegion, optHeadless, optAttach,
-                       optHost, optEffect, optSelftest, optSelftestCapture, optCaptureReg});
+    parser.addOptions({optHatari, optTos, optMachine, optRegion, optLanguage, optHeadless,
+                       optAttach, optHost, optEffect, optSelftest, optSelftestCapture,
+                       optCaptureReg});
     parser.process(app);
 
     MainWindow::Config cfg;
@@ -98,6 +102,13 @@ int main(int argc, char *argv[])
     cfg.region = parser.value(optRegion).compare("ntsc", Qt::CaseInsensitive) == 0
                      ? VideoRegion::Ntsc60
                      : VideoRegion::Pal50;
+    for (Language l : Languages::all()) {
+        if (Languages::info(l).name.compare(parser.value(optLanguage), Qt::CaseInsensitive)
+            == 0) {
+            cfg.language = l;
+            break;
+        }
+    }
     if (parser.isSet(optEffect))
         cfg.hatari.gemdosDir = QFileInfo(parser.value(optEffect)).absoluteFilePath();
 

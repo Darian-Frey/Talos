@@ -51,12 +51,63 @@ inline QList<MachineType> all()
 
 } // namespace Machines
 
-// Region <-> Hatari --country (with a multi-language EmuTOS) and display name.
-inline const char *regionCountry(VideoRegion r)
-{
-    return r == VideoRegion::Ntsc60 ? "us" : "de";   // us=60Hz NTSC, de=50Hz PAL
-}
 inline const char *regionName(VideoRegion r)
 {
     return r == VideoRegion::Ntsc60 ? "NTSC" : "PAL";
 }
+
+// Language / country. EmuTOS's --country sets both the language and the video
+// region; most countries are PAL, only a few (us) are NTSC. So a language maps to
+// a PAL country and, where one exists, an NTSC country.
+enum class Language { English, German, French, Spanish, Italian, Swedish };
+
+struct LanguageInfo
+{
+    Language lang;
+    QString name;
+    QString palCountry;    // EmuTOS --country for 50 Hz PAL
+    QString ntscCountry;   // for 60 Hz NTSC, or empty if the language has none
+};
+
+namespace Languages {
+
+inline const LanguageInfo &info(Language l)
+{
+    static const LanguageInfo kTable[] = {
+        {Language::English, "English", "uk", "us"},
+        {Language::German,  "German",  "de", ""},
+        {Language::French,  "French",  "fr", ""},
+        {Language::Spanish, "Spanish", "es", ""},
+        {Language::Italian, "Italian", "it", ""},
+        {Language::Swedish, "Swedish", "se", ""},
+    };
+    for (const LanguageInfo &e : kTable)
+        if (e.lang == l)
+            return e;
+    return kTable[0];
+}
+
+inline QList<Language> all()
+{
+    return {Language::English, Language::German, Language::French,
+            Language::Spanish, Language::Italian, Language::Swedish};
+}
+
+// The --country for a language + desired region (falls back to PAL when the
+// language has no NTSC variant).
+inline QString country(Language l, VideoRegion r)
+{
+    const LanguageInfo &e = info(l);
+    if (r == VideoRegion::Ntsc60 && !e.ntscCountry.isEmpty())
+        return e.ntscCountry;
+    return e.palCountry;
+}
+
+// The region a country actually boots in (only us/ca are NTSC).
+inline VideoRegion regionOf(const QString &country)
+{
+    return (country == "us" || country == "ca") ? VideoRegion::Ntsc60
+                                                 : VideoRegion::Pal50;
+}
+
+} // namespace Languages

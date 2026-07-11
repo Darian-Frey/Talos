@@ -39,6 +39,7 @@ public:
         QString host = "127.0.0.1";
         MachineType machine = MachineType::ST;      // initial machine
         VideoRegion region = VideoRegion::Pal50;    // initial region
+        Language language = Language::English;       // initial language
     };
 
     explicit MainWindow(Config config, QWidget *parent = nullptr);
@@ -58,8 +59,10 @@ signals:
 
 private slots:
     void onStartClicked();      // launch (or attach) + connect
+    void doStop();              // terminate/disconnect the running machine
     void onMachineChanged(int index);
     void onRegionChanged(int index);
+    void onLanguageChanged(int index);
     void onConnected();
     void onConnectionFailed(const QString &reason);
     void onNotification(const QByteArray &name, const QList<QByteArray> &args);
@@ -76,6 +79,8 @@ private slots:
 private:
     void buildUi();
     void relaunch();            // re-launch Hatari with the current machine/region
+    void reconcileRegion();     // sync the region combo to the language's actual region
+    void updateLaunchStopState();
     void updateCapabilities();  // refresh the capability readout for the machine
     void updateRegisterPanel();
     void updateStatusBar();
@@ -97,10 +102,12 @@ private:
     QString m_shotPath;
 
     QComboBox *m_machineCombo = nullptr;
+    QComboBox *m_languageCombo = nullptr;
     QComboBox *m_regionCombo = nullptr;
     QLabel *m_capsLabel = nullptr;
 
     QAction *m_actStart = nullptr;
+    QAction *m_actStop = nullptr;
     QAction *m_actBreak = nullptr;
     QAction *m_actRun = nullptr;
     QAction *m_actStep = nullptr;
@@ -118,8 +125,9 @@ private:
     QLabel *m_captureLabel = nullptr;   // persistent last-capture result
 
     MachineState m_state;       // latest parsed regs/counters snapshot
-    MachineType m_machine = MachineType::ST;     // selected machine
-    VideoRegion m_region = VideoRegion::Pal50;   // selected region
+    MachineType m_machine = MachineType::ST;      // selected machine
+    VideoRegion m_region = VideoRegion::Pal50;    // selected region
+    Language m_language = Language::English;       // selected language
 
     CaptureController *m_capture = nullptr;
     QVector<WriteEvent> m_writes;   // last captured register writes

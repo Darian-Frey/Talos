@@ -28,9 +28,16 @@ Region maps to Hatari's `--country`: `us` = 60 Hz NTSC, `de` = 50 Hz PAL.
 
 ## UI
 
-- Toolbar **Machine** and **Region** combo boxes. Changing either updates the
-  capability readout and, if a machine is running, **relaunches** Hatari with the
-  new config and reconnects (clearing the previous machine's frame/state).
+- Toolbar **Machine**, **Language** and **Region** combo boxes. Changing any of
+  them updates the capability readout and, if a machine is running, **relaunches**
+  Hatari with the new config and reconnects (clearing the previous machine's
+  frame/state).
+- **Language** maps to the EmuTOS `--country` together with region: English has
+  both `uk` (PAL) and `us` (NTSC); other languages are PAL-only, so picking NTSC
+  with a PAL-only language snaps the region back to PAL (kept honest by
+  `reconcileRegion`). Default is English · PAL (`uk`).
+- **Stop** terminates the running machine and disconnects (Launch/Stop enable-gate
+  each other); an unexpected Hatari exit resets the same way.
 - Region also drives `BeamGeometry` so the beam overlay uses the right PAL/NTSC
   constants (closes BUG-002).
 - A **Machine** dock lists the current machine's capabilities (✓/✗ + palette
