@@ -103,6 +103,7 @@ private:
 
     QLabel *m_connLabel = nullptr;
     QLabel *m_posLabel = nullptr;
+    QLabel *m_captureLabel = nullptr;   // persistent last-capture result
 
     MachineState m_state;       // latest parsed regs/counters snapshot
     VideoRegion m_region = VideoRegion::Pal50;  // Phase 2 makes this selectable

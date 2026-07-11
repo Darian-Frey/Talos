@@ -160,6 +160,9 @@ void MainWindow::buildUi()
     tdock->setWidget(m_timeline);
     addDockWidget(Qt::BottomDockWidgetArea, tdock);
 
+    m_captureLabel = new QLabel(QString(), this);
+    statusBar()->addWidget(m_captureLabel);   // left, persistent (not a timed message)
+
     m_connLabel = new QLabel(QStringLiteral("disconnected"), this);
     m_posLabel = new QLabel(QString(), this);
     statusBar()->addPermanentWidget(m_posLabel);
@@ -370,13 +373,15 @@ void MainWindow::onCaptureClicked()
     m_timeline->setRowCount(0);
     m_fb->setWriteMarks({});
     setControlsEnabledForCapture(true);
-    statusBar()->showMessage(QStringLiteral("Capturing writes to $%1…").arg(addr, 0, 16));
+    m_captureLabel->setStyleSheet(QString());
+    m_captureLabel->setText(QStringLiteral("capture $%1: running…").arg(addr, 0, 16));
     m_capture->start(addr, m_countSpin->value());
 }
 
 void MainWindow::onCaptureProgress(int count, int target)
 {
-    statusBar()->showMessage(QStringLiteral("Captured %1/%2…").arg(count).arg(target));
+    m_captureLabel->setText(QStringLiteral("capture $%1: %2/%3…")
+                                .arg(m_capture->address(), 0, 16).arg(count).arg(target));
 }
 
 void MainWindow::onCaptureFinished(bool ok, const QString &reason)
@@ -384,13 +389,17 @@ void MainWindow::onCaptureFinished(bool ok, const QString &reason)
     m_writes = m_capture->events();
     populateTimeline();
     setControlsEnabledForCapture(false);
-    if (ok)
-        statusBar()->showMessage(QStringLiteral("Captured %1 writes to $%2.")
-                                     .arg(m_writes.size())
-                                     .arg(m_capture->address(), 0, 16), 5000);
-    else
-        statusBar()->showMessage(QStringLiteral("Capture ended after %1 writes: %2")
-                                     .arg(m_writes.size(), 0).arg(reason), 6000);
+    // Persist the result in the status bar so a 0-write timeout isn't easy to miss.
+    const QString reg = QStringLiteral("$%1").arg(m_capture->address(), 0, 16);
+    if (ok && !m_writes.isEmpty()) {
+        m_captureLabel->setStyleSheet(QStringLiteral("color:#2e7d32;"));   // green
+        m_captureLabel->setText(
+            QStringLiteral("capture %1: %2 writes ✓").arg(reg).arg(m_writes.size()));
+    } else {
+        m_captureLabel->setStyleSheet(QStringLiteral("color:#c62828;"));   // red
+        m_captureLabel->setText(QStringLiteral("capture %1: %2 writes — %3")
+                                    .arg(reg).arg(m_writes.size()).arg(reason));
+    }
     refresh();   // fresh frame; write marks are recomputed in refreshScreen
     emit captureCompleted(m_writes.size());
 }
