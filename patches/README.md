@@ -30,8 +30,11 @@ Maintained as an ordered series applied on top of the pinned fork commit by
   trace. Records each bus access (`Blitter_ReadWord` / `Blitter_WriteWord`) and a
   blit-complete marker (`Blitter_Start`, `y_count==0`) into a host-side ring
   buffer; exposes it over the new `blittrace` command (protocol/b1-protocol.md).
-  Off by default, so it does not perturb emulation. 3 files, +111 lines.
+  Off by default, so it does not perturb emulation. 3 files, +123 lines.
 - **`0002-tap-dma-lmc1992.patch`** (F-209) — opt-in DMA-sound + LMC1992 EQ trace.
   Records sample-buffer drain, frame bounds, control/mode and decoded EQ setting
   changes; `dmatrace on` snapshots current state so a capture is self-contained.
-  Exposed over the `dmatrace` command. Off by default. 3 files, +136 lines.
+  Exposed over the `dmatrace` command. Off by default. 3 files, +146 lines.
+
+Both rings hold up to 65536 entries; the `on [N]` argument caps a capture below
+that (the client's Depth control), and the client flags a truncated capture.

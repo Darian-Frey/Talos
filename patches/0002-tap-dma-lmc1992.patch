@@ -1,8 +1,8 @@
 diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
-index 63919571..99b66591 100644
+index 020aaaa2..e3b08070 100644
 --- a/src/debug/remotedebug.c
 +++ b/src/debug/remotedebug.c
-@@ -1148,6 +1148,52 @@ static int RemoteDebug_blittrace(int nArgc, char *psArgs[], RemoteDebugState* st
+@@ -1154,6 +1154,58 @@ static int RemoteDebug_blittrace(int nArgc, char *psArgs[], RemoteDebugState* st
  	return 0;					/* ProcessBuffer appends the terminator */
  }
  
@@ -19,9 +19,15 @@ index 63919571..99b66591 100644
 +	if (nArgc >= 2)
 +	{
 +		if (strcmp(psArgs[1], "on") == 0)
-+			DmaSnd_Trace_SetEnabled(true);
++		{
++			/* optional entry limit: "dmatrace on <N>" (0/absent = full buffer) */
++			uint32_t limit = 0;
++			if (nArgc >= 3)
++				read_hex32_value(psArgs[2], &limit);
++			DmaSnd_Trace_SetEnabled(true, limit);
++		}
 +		else if (strcmp(psArgs[1], "off") == 0)
-+			DmaSnd_Trace_SetEnabled(false);
++			DmaSnd_Trace_SetEnabled(false, 0);
 +		else if (strcmp(psArgs[1], "clear") == 0)
 +			DmaSnd_Trace_Clear();
 +		else
@@ -55,7 +61,7 @@ index 63919571..99b66591 100644
  static const rdbcommand_t remoteDebugCommandList[] = {
  	{ RemoteDebug_status,	"status"	, true		},
  	{ RemoteDebug_break,	"break"		, true		},
-@@ -1171,6 +1217,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+@@ -1177,6 +1229,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
  	{ RemoteDebug_memfind,	"memfind"	, true		},
  	{ RemoteDebug_savebin,	"savebin"	, true		},
  	{ RemoteDebug_blittrace,"blittrace"	, true		},
@@ -64,25 +70,26 @@ index 63919571..99b66591 100644
  	/* Terminator */
  	{ NULL, NULL }
 diff --git a/src/dmaSnd.c b/src/dmaSnd.c
-index 0cd398e8..0fa01898 100644
+index 0cd398e8..9ff463f1 100644
 --- a/src/dmaSnd.c
 +++ b/src/dmaSnd.c
-@@ -183,6 +183,46 @@ static struct dma_s dma;
+@@ -183,6 +183,50 @@ static struct dma_s dma;
  static struct microwire_s microwire;
  static struct lmc1992_s lmc1992;
  
 +/* --- Talos B2 (F-209): opt-in DMA-sound + LMC1992 trace. See dmaSnd.h. ----- */
 +/* Disabled by default; DmaSnd_Trace_Add() early-returns when off and only     */
 +/* writes a host-side buffer, so it never perturbs emulation.                  */
-+#define DMASND_TRACE_MAX	16384
++#define DMASND_TRACE_MAX	65536
 +static DMASND_TRACE_ENTRY	DmaSndTrace[DMASND_TRACE_MAX];
 +static uint32_t			DmaSndTraceCount;
++static uint32_t			DmaSndTraceLimit = DMASND_TRACE_MAX;	/* client-requested cap */
 +static bool			DmaSndTraceEnabled;
 +static int			DmaSndLmcLast[6] = { -1, -1, -1, -1, -1, -1 };	/* latest LMC value per param, for the enable snapshot */
 +
 +static void DmaSnd_Trace_Add ( uint16_t kind , uint32_t a , uint32_t b )
 +{
-+	if ( !DmaSndTraceEnabled || DmaSndTraceCount >= DMASND_TRACE_MAX )
++	if ( !DmaSndTraceEnabled || DmaSndTraceCount >= DmaSndTraceLimit )
 +		return;
 +	DmaSndTrace[DmaSndTraceCount].cycle = CyclesGlobalClockCounter;
 +	DmaSndTrace[DmaSndTraceCount].kind  = kind;
@@ -91,12 +98,15 @@ index 0cd398e8..0fa01898 100644
 +	DmaSndTraceCount++;
 +}
 +
-+void DmaSnd_Trace_SetEnabled ( bool on )
++/* limit==0 means "use the whole buffer"; otherwise clamp to the buffer size. */
++void DmaSnd_Trace_SetEnabled ( bool on , uint32_t limit )
 +{
 +	DmaSndTraceEnabled = on;
 +	if ( on )
 +	{
 +		DmaSndTraceCount = 0;			/* fresh capture on enable */
++		DmaSndTraceLimit = ( limit == 0 || limit > DMASND_TRACE_MAX )
++					? DMASND_TRACE_MAX : limit;
 +		/* Snapshot the current state so a capture is self-contained even when
 +		 * the program set control / buffer / EQ up before tracing was enabled. */
 +		DmaSnd_Trace_Add ( DMATRACE_CTRL , nDmaSoundControl , dma.soundMode );
@@ -114,7 +124,7 @@ index 0cd398e8..0fa01898 100644
  /* dB = 20log(gain)  :  gain = antilog(dB/20)                                */
  /* Table gain values = (int)(powf(10.0, dB/20.0)*65536.0 + 0.5)  2dB steps   */
  
-@@ -366,6 +406,8 @@ static void DmaSnd_FIFO_Refill(void)
+@@ -366,6 +410,8 @@ static void DmaSnd_FIFO_Refill(void)
  				break;				/* Loop mode off, dma audio is now turned off */
  		}
  	}
@@ -123,7 +133,7 @@ index 0cd398e8..0fa01898 100644
  }
  
  
-@@ -466,6 +508,8 @@ static void DmaSnd_StartNewFrame(void)
+@@ -466,6 +512,8 @@ static void DmaSnd_StartNewFrame(void)
  
  	dma.frameCounterAddr = dma.frameStartAddr;
  
@@ -132,7 +142,7 @@ index 0cd398e8..0fa01898 100644
  	LOG_TRACE(TRACE_DMASND, "DMA snd new frame start=%x end=%x\n", dma.frameStartAddr, dma.frameEndAddr);
  
  	if ( ( dma.frameStartAddr == dma.frameEndAddr ) && ( ( nDmaSoundControl & DMASNDCTRL_PLAYLOOP ) == 0 ) )
-@@ -816,6 +860,8 @@ void DmaSnd_SoundControl_WriteWord(void)
+@@ -816,6 +864,8 @@ void DmaSnd_SoundControl_WriteWord(void)
  		LOG_TRACE(TRACE_DMASND, "DMA snd control write: stopping dma sound output\n");
  		DmaSnd_Update_XSINT_Line ( MFP_GPIP_STATE_LOW );		/* O/LOW=dma sound idle */
  	}
@@ -141,7 +151,7 @@ index 0cd398e8..0fa01898 100644
  }
  
  
-@@ -1170,6 +1216,19 @@ void DmaSnd_InterruptHandler_Microwire(void)
+@@ -1170,6 +1220,19 @@ void DmaSnd_InterruptHandler_Microwire(void)
  				LOG_TRACE ( TRACE_DMASND, "Microwire unknown command=0x%x len=%d ignored mask=0x%x data=0x%x\n", cmd , cmd_len , microwire.mask , microwire.data );
  				break;
  		}
@@ -162,7 +172,7 @@ index 0cd398e8..0fa01898 100644
  }
  
 diff --git a/src/includes/dmaSnd.h b/src/includes/dmaSnd.h
-index 02bd38ae..306073c4 100644
+index 02bd38ae..f9852909 100644
 --- a/src/includes/dmaSnd.h
 +++ b/src/includes/dmaSnd.h
 @@ -52,4 +52,34 @@ extern void DmaSnd_Info(FILE *fp, uint32_t dummy);
@@ -193,7 +203,7 @@ index 02bd38ae..306073c4 100644
 +#define DMATRACE_CTRL	2
 +#define DMATRACE_LMC	3
 +
-+extern void			DmaSnd_Trace_SetEnabled ( bool on );
++extern void			DmaSnd_Trace_SetEnabled ( bool on , uint32_t limit );
 +extern bool			DmaSnd_Trace_IsEnabled ( void );
 +extern void			DmaSnd_Trace_Clear ( void );
 +extern uint32_t			DmaSnd_Trace_GetCount ( void );

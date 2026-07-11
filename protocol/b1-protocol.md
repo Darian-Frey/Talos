@@ -101,7 +101,7 @@ emulation (the D-009 diff harness stays valid). Framing is the standard one
 
 | Form | Effect | Reply |
 |---|---|---|
-| `blittrace on` | enable + clear the trace buffer | `OK` |
+| `blittrace on [N]` | enable + clear; cap at `N` entries (hex; 0/absent = full) | `OK` |
 | `blittrace off` | disable | `OK` |
 | `blittrace clear` | clear without disabling | `OK` |
 | `blittrace` | dump accumulated entries | see below |
@@ -111,7 +111,8 @@ Dump reply: `OK` `0x1` `<count:hex>` then, per entry, five `0x1`-separated hex
 tokens — `addr` `cycle_hi` `cycle_lo` `value` `flags`. `flags` bit0 = write
 (else read); bit1 = **blit-complete marker** (closes an operation — a non-hog
 blit spans several bus bursts but yields one marker at the true end-of-blit).
-The buffer caps at 16384 entries. Taps: `blitter.c` `Blitter_ReadWord` /
+The ring buffer holds up to 65536 entries; `on [N]` caps a capture below that so
+short, focused captures stay small. Taps: `blitter.c` `Blitter_ReadWord` /
 `Blitter_WriteWord` (each memory access) and the `y_count==0` branch of
 `Blitter_Start` (the marker); `cycle` is `CyclesGlobalClockCounter`.
 
@@ -124,7 +125,7 @@ when the program set things up before tracing began.
 
 | Form | Effect | Reply |
 |---|---|---|
-| `dmatrace on` | enable + clear + snapshot current state | `OK` |
+| `dmatrace on [N]` | enable + clear + snapshot; cap at `N` entries (hex; 0/absent = full) | `OK` |
 | `dmatrace off` | disable | `OK` |
 | `dmatrace clear` | clear without disabling | `OK` |
 | `dmatrace` | dump accumulated entries | see below |

@@ -127,6 +127,8 @@ private:
     QAction *m_actCapture = nullptr;
     QAction *m_actBlitCapture = nullptr;
     QAction *m_actDmaCapture = nullptr;
+    QComboBox *m_depthCombo = nullptr;   // trace buffer entry cap (shared)
+    QSpinBox *m_windowSpin = nullptr;    // trace run window in ms (shared)
     QLineEdit *m_regEdit = nullptr;
     QSpinBox *m_countSpin = nullptr;
     QTableWidget *m_timeline = nullptr;

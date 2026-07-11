@@ -176,9 +176,27 @@ void MainWindow::buildUi()
     connect(m_actCapture, &QAction::triggered, this, &MainWindow::onCaptureClicked);
 
     tb->addSeparator();
+    tb->addWidget(new QLabel(QStringLiteral(" Depth "), this));
+    m_depthCombo = new QComboBox(this);
+    m_depthCombo->addItem(QStringLiteral("1K"), 1024);
+    m_depthCombo->addItem(QStringLiteral("4K"), 4096);
+    m_depthCombo->addItem(QStringLiteral("16K"), 16384);
+    m_depthCombo->addItem(QStringLiteral("64K"), 65536);
+    m_depthCombo->setCurrentIndex(2);   // 16K default
+    m_depthCombo->setToolTip(
+        QStringLiteral("Max trace entries per B2 capture (Blit / DMA). Hitting it truncates."));
+    tb->addWidget(m_depthCombo);
+    m_windowSpin = new QSpinBox(this);
+    m_windowSpin->setRange(100, 2000);
+    m_windowSpin->setSingleStep(100);
+    m_windowSpin->setValue(500);
+    m_windowSpin->setSuffix(QStringLiteral(" ms"));
+    m_windowSpin->setToolTip(QStringLiteral("How long to run while tracing, before dumping"));
+    tb->addWidget(m_windowSpin);
+
     m_actBlitCapture = tb->addAction(QStringLiteral("Blit capture"));
     m_actBlitCapture->setToolTip(
-        QStringLiteral("F-208 (B2): trace blitter memory traffic over a short run window"));
+        QStringLiteral("F-208 (B2): trace blitter memory traffic over the run window"));
     connect(m_actBlitCapture, &QAction::triggered, this, &MainWindow::captureBlitTraffic);
 
     m_actDmaCapture = tb->addAction(QStringLiteral("DMA capture"));
@@ -623,20 +641,21 @@ void MainWindow::captureBlitTraffic()
 {
     if (!m_rdb || !m_rdb->isConnected())
         return;
+    const int depth = m_depthCombo->currentData().toInt();
+    const int windowMs = m_windowSpin->value();
     m_liveTimer->stop();                 // don't interleave live polls with the run window
     m_captureLabel->setStyleSheet(QString());
     m_captureLabel->setText(QStringLiteral("blit trace: running…"));
     m_actBlitCapture->setEnabled(false);
 
-    // Enable the tap (clears the buffer), let the machine run a short window, then
-    // break, dump the trace, and disable the tap again. The tap is opt-in, so it
-    // perturbs nothing while off.
-    m_rdb->sendCommand("blittrace on");
+    // Enable the tap (clears the buffer, caps at `depth` entries), let the machine
+    // run the window, then break, dump, and disable. Opt-in, so it perturbs
+    // nothing while off. The fork parses the entry cap as hex.
+    m_rdb->sendCommand("blittrace on " + QByteArray::number(depth, 16));
     m_rdb->run();
-    constexpr int kBlitWindowMs = 500;
-    QTimer::singleShot(kBlitWindowMs, this, [this] {
-        m_rdb->breakExec([this](const RdbClient::Tokens &) {
-            m_rdb->sendCommand("blittrace", [this](const RdbClient::Tokens &r) {
+    QTimer::singleShot(windowMs, this, [this, depth] {
+        m_rdb->breakExec([this, depth](const RdbClient::Tokens &) {
+            m_rdb->sendCommand("blittrace", [this, depth](const RdbClient::Tokens &r) {
                 const QVector<BlitOp> ops = BlitterTrace::parse(r);
                 m_blitView->setOps(ops);
                 m_rdb->sendCommand("blittrace off");
@@ -648,11 +667,16 @@ void MainWindow::captureBlitTraffic()
                     if (op.endCycle != 0)
                         ++blits;
                 }
+                const bool capped = (reads + writes + blits) >= depth;
                 if (reads + writes > 0) {
-                    m_captureLabel->setStyleSheet(QStringLiteral("color:#2e7d32;"));   // green
+                    m_captureLabel->setStyleSheet(
+                        capped ? QStringLiteral("color:#b26a00;")     // amber: truncated
+                               : QStringLiteral("color:#2e7d32;"));   // green
                     m_captureLabel->setText(
-                        QStringLiteral("blit trace: %1 blits · %2 rd · %3 wr ✓")
-                            .arg(blits).arg(reads).arg(writes));
+                        QStringLiteral("blit trace: %1 blits · %2 rd · %3 wr%4")
+                            .arg(blits).arg(reads).arg(writes)
+                            .arg(capped ? QStringLiteral(" · capped at %1 ⚠").arg(depth)
+                                        : QStringLiteral(" ✓")));
                 } else {
                     m_captureLabel->setStyleSheet(QStringLiteral("color:#c62828;"));   // red
                     m_captureLabel->setText(
@@ -671,28 +695,35 @@ void MainWindow::captureDmaSound()
 {
     if (!m_rdb || !m_rdb->isConnected())
         return;
+    const int depth = m_depthCombo->currentData().toInt();
+    const int windowMs = m_windowSpin->value();
     m_liveTimer->stop();
     m_captureLabel->setStyleSheet(QString());
     m_captureLabel->setText(QStringLiteral("DMA trace: running…"));
     m_actDmaCapture->setEnabled(false);
 
-    m_rdb->sendCommand("dmatrace on");
+    m_rdb->sendCommand("dmatrace on " + QByteArray::number(depth, 16));
     m_rdb->run();
-    constexpr int kDmaWindowMs = 500;
-    QTimer::singleShot(kDmaWindowMs, this, [this] {
-        m_rdb->breakExec([this](const RdbClient::Tokens &) {
-            m_rdb->sendCommand("dmatrace", [this](const RdbClient::Tokens &r) {
+    QTimer::singleShot(windowMs, this, [this, depth] {
+        m_rdb->breakExec([this, depth](const RdbClient::Tokens &) {
+            m_rdb->sendCommand("dmatrace", [this, depth](const RdbClient::Tokens &r) {
                 const DmaSndTrace t = DmaSndTrace::parse(r);
                 m_dmaView->setTrace(t);
                 m_rdb->sendCommand("dmatrace off");
 
+                const int total = t.drain.size() + t.lmcSeq.size() + t.frames + (t.haveCtrl ? 1 : 0);
+                const bool capped = total >= depth;
                 const bool any = !t.drain.isEmpty() || t.haveCtrl || !t.lmcSeq.isEmpty();
                 if (any) {
-                    m_captureLabel->setStyleSheet(QStringLiteral("color:#2e7d32;"));
+                    m_captureLabel->setStyleSheet(
+                        capped ? QStringLiteral("color:#b26a00;")     // amber: truncated
+                               : QStringLiteral("color:#2e7d32;"));
                     m_captureLabel->setText(
-                        QStringLiteral("DMA trace: %1 drain · %2 EQ changes%3 ✓")
+                        QStringLiteral("DMA trace: %1 drain · %2 EQ changes%3%4")
                             .arg(t.drain.size()).arg(t.lmcSeq.size())
-                            .arg(t.playing() ? QStringLiteral(" · playing") : QString()));
+                            .arg(t.playing() ? QStringLiteral(" · playing") : QString())
+                            .arg(capped ? QStringLiteral(" · capped at %1 ⚠").arg(depth)
+                                        : QStringLiteral(" ✓")));
                 } else {
                     m_captureLabel->setStyleSheet(QStringLiteral("color:#c62828;"));
                     m_captureLabel->setText(

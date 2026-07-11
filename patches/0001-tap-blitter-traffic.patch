@@ -1,22 +1,23 @@
 diff --git a/src/blitter.c b/src/blitter.c
-index 09510107..2828e226 100644
+index 09510107..e6fe3de3 100644
 --- a/src/blitter.c
 +++ b/src/blitter.c
-@@ -419,6 +419,37 @@ static void Blitter_BusArbitration ( int RequestBusMode )
+@@ -419,6 +419,43 @@ static void Blitter_BusArbitration ( int RequestBusMode )
  
  
  
 +/* --- Talos B2 (F-208): opt-in blitter memory-traffic trace ---------------- */
 +/* See blitter.h. Disabled by default; Blitter_Trace_Add() early-returns when  */
 +/* off and only writes a host-side buffer, so it never perturbs emulation.     */
-+#define BLITTER_TRACE_MAX	16384
++#define BLITTER_TRACE_MAX	65536
 +static BLITTER_TRACE_ENTRY	BlitterTrace[BLITTER_TRACE_MAX];
 +static uint32_t			BlitterTraceCount;
++static uint32_t			BlitterTraceLimit = BLITTER_TRACE_MAX;	/* client-requested cap */
 +static bool			BlitterTraceEnabled;
 +
 +static void Blitter_Trace_Add ( uint32_t addr , uint16_t value , uint16_t flags )
 +{
-+	if ( !BlitterTraceEnabled || BlitterTraceCount >= BLITTER_TRACE_MAX )
++	if ( !BlitterTraceEnabled || BlitterTraceCount >= BlitterTraceLimit )
 +		return;
 +	BlitterTrace[BlitterTraceCount].addr  = addr;
 +	BlitterTrace[BlitterTraceCount].cycle = CyclesGlobalClockCounter;
@@ -25,11 +26,16 @@ index 09510107..2828e226 100644
 +	BlitterTraceCount++;
 +}
 +
-+void Blitter_Trace_SetEnabled ( bool on )
++/* limit==0 means "use the whole buffer"; otherwise clamp to the buffer size. */
++void Blitter_Trace_SetEnabled ( bool on , uint32_t limit )
 +{
 +	BlitterTraceEnabled = on;
 +	if ( on )
++	{
 +		BlitterTraceCount = 0;			/* fresh capture on enable */
++		BlitterTraceLimit = ( limit == 0 || limit > BLITTER_TRACE_MAX )
++					? BLITTER_TRACE_MAX : limit;
++	}
 +}
 +bool Blitter_Trace_IsEnabled ( void )		{ return BlitterTraceEnabled; }
 +void Blitter_Trace_Clear ( void )		{ BlitterTraceCount = 0; }
@@ -40,7 +46,7 @@ index 09510107..2828e226 100644
  /*-----------------------------------------------------------------------*/
  /**
   * Low level memory accesses to read / write a word
-@@ -435,6 +466,7 @@ static uint16_t Blitter_ReadWord(uint32_t addr)
+@@ -435,6 +472,7 @@ static uint16_t Blitter_ReadWord(uint32_t addr)
  	Blitter_FlushCycles();
  
  	BlitterState.bus_word = value;
@@ -48,7 +54,7 @@ index 09510107..2828e226 100644
  	return value;
  }
  
-@@ -447,6 +479,8 @@ static void Blitter_WriteWord(uint32_t addr, uint16_t value)
+@@ -447,6 +485,8 @@ static void Blitter_WriteWord(uint32_t addr, uint16_t value)
  	BlitterState.CountBusBlitter++;
  	Blitter_AddCycles ( BLITTER_CYCLES_PER_BUS_WRITE );
  	Blitter_FlushCycles();
@@ -57,7 +63,7 @@ index 09510107..2828e226 100644
  }
  
  
-@@ -906,6 +940,10 @@ Video_GetPosition ( &FrameCycles , &HblCounterVideo , &LineCycles );
+@@ -906,6 +946,10 @@ Video_GetPosition ( &FrameCycles , &HblCounterVideo , &LineCycles );
  
  	if (BlitterRegs.y_count == 0)
  	{
@@ -69,10 +75,10 @@ index 09510107..2828e226 100644
  		BlitterRegs.ctrl &= ~(0x80|0x40);
  
 diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
-index 3b23085d..63919571 100644
+index 3b23085d..020aaaa2 100644
 --- a/src/debug/remotedebug.c
 +++ b/src/debug/remotedebug.c
-@@ -1098,6 +1098,56 @@ typedef struct
+@@ -1098,6 +1098,62 @@ typedef struct
  } rdbcommand_t;
  
  /* Array of all remote debug command descriptors */
@@ -92,9 +98,15 @@ index 3b23085d..63919571 100644
 +	if (nArgc >= 2)
 +	{
 +		if (strcmp(psArgs[1], "on") == 0)
-+			Blitter_Trace_SetEnabled(true);
++		{
++			/* optional entry limit: "blittrace on <N>" (0/absent = full buffer) */
++			uint32_t limit = 0;
++			if (nArgc >= 3)
++				read_hex32_value(psArgs[2], &limit);
++			Blitter_Trace_SetEnabled(true, limit);
++		}
 +		else if (strcmp(psArgs[1], "off") == 0)
-+			Blitter_Trace_SetEnabled(false);
++			Blitter_Trace_SetEnabled(false, 0);
 +		else if (strcmp(psArgs[1], "clear") == 0)
 +			Blitter_Trace_Clear();
 +		else
@@ -129,7 +141,7 @@ index 3b23085d..63919571 100644
  static const rdbcommand_t remoteDebugCommandList[] = {
  	{ RemoteDebug_status,	"status"	, true		},
  	{ RemoteDebug_break,	"break"		, true		},
-@@ -1120,6 +1170,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+@@ -1120,6 +1176,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
  	{ RemoteDebug_ffwd,		"ffwd"		, true		},
  	{ RemoteDebug_memfind,	"memfind"	, true		},
  	{ RemoteDebug_savebin,	"savebin"	, true		},
@@ -138,7 +150,7 @@ index 3b23085d..63919571 100644
  	/* Terminator */
  	{ NULL, NULL }
 diff --git a/src/includes/blitter.h b/src/includes/blitter.h
-index 9b363eb2..b5f388c1 100644
+index 9b363eb2..c272e624 100644
 --- a/src/includes/blitter.h
 +++ b/src/includes/blitter.h
 @@ -94,4 +94,26 @@ extern void Blitter_HOG_CPU_do_cycles_after ( int cycles );
@@ -161,7 +173,7 @@ index 9b363eb2..b5f388c1 100644
 +#define BLITTER_TRACE_FLAG_WRITE	(1 << 0)
 +#define BLITTER_TRACE_FLAG_MARKER	(1 << 1)
 +
-+extern void			Blitter_Trace_SetEnabled ( bool on );
++extern void			Blitter_Trace_SetEnabled ( bool on , uint32_t limit );
 +extern bool			Blitter_Trace_IsEnabled ( void );
 +extern void			Blitter_Trace_Clear ( void );
 +extern uint32_t			Blitter_Trace_GetCount ( void );
