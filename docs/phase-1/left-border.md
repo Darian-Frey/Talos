@@ -44,6 +44,13 @@ each write lands at; `video_border_h` prints `detect remove left N<->M` on succe
 - Trace: `detect remove left 5<->165` fires ~1.2M times over a run (stable).
 - Visual: at VBL 12000 the upper band shows green screen content extending to the
   left frame edge (border removed) while lower scanlines keep the red left border.
+- **Client (F-203):** `talos --effect tests/effects/disk-lborder`, capture reg
+  `ffff8260` — captures the border-opening writes uniformly at cyc 8 (x=0, the
+  left frame edge) across the whole band, i.e. the resolution write landing at its
+  exact cycle and the border opening as a consequence. This is the Phase 1 exit
+  criterion, on the register-write timeline.
+- **Harness (D-009):** `harness/run-border.sh` asserts the left border opens on a
+  contiguous band of scanlines (found 158 rows, y=58..215). PASS.
 
 ## Limits (open polish)
 
@@ -53,6 +60,3 @@ each write lands at; `video_border_h` prints `detect remove left N<->M` on succe
   pixel-exact reference is wanted.
 - STF WS3 / PAL / low-res only (matches `BeamGeometry`). Other wakeup states and
   STE prefetch shift the window (Phase 2/3).
-- It is a candidate harness regression case, but the harness currently syncs on an
-  absolute VBL for the raster effect; adding a border-specific per-scanline check
-  (does the left border actually open on the expected lines?) is the next step.

@@ -203,15 +203,57 @@ def report(name, rows, max_delta, height):
     return False
 
 
+# --------------------------------------------------------------- border check
+def longest_run(mask):
+    """(start, length) of the longest contiguous True run in a 1-D bool array."""
+    best_start = best_len = cur_start = cur_len = 0
+    for i, v in enumerate(mask):
+        if v:
+            cur_start = i if cur_len == 0 else cur_start
+            cur_len += 1
+            if cur_len > best_len:
+                best_len, best_start = cur_len, cur_start
+        else:
+            cur_len = 0
+    return best_start, best_len
+
+
+def border_check(args):
+    """Assert the effect opens the left border on a band of scanlines: sample the
+    left-border column and find the contiguous run where it shows screen content
+    (border open) rather than the border colour."""
+    img = run(args, False, "border")            # effect -> screenshot at SHOT_VBL
+    h, w = img.shape[0], img.shape[1]
+    border_x = 20                               # inside the left border (display ~x=96)
+    col = img[:, border_x, :].astype(int)
+    # lborder.s uses a red border (palette 0) and green screen content (palette 15);
+    # the left border is open on a row when its pixel is green, not red.
+    open_rows = (col[:, 1] - col[:, 0]) > 60     # G notably exceeds R
+    start, length = longest_run(open_rows)
+    print(f"\nframe {w}x{h}; left border (x={border_x}) open on "
+          f"{int(open_rows.sum())} rows; longest band = {length} rows "
+          f"at y={start}..{start + length - 1 if length else start}")
+    # The effect opens ~120 scanlines (up to ~240 image rows at 2x); require a
+    # healthy contiguous band so edge/noise rows can't pass it.
+    ok = length >= 100
+    print("BORDER CHECK PASS" if ok else "BORDER CHECK FAIL — no border-open band")
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser(description="Talos per-scanline validation harness")
     ap.add_argument("--hatari", required=True)
     ap.add_argument("--tos", required=True)
     ap.add_argument("--effect", required=True, help="GEMDOS dir with AUTO/<effect>.PRG")
     ap.add_argument("--reg", default="ffff8240", help="register to capture (hex)")
+    ap.add_argument("--border-check", action="store_true",
+                    help="verify --effect opens the left border on a band of scanlines")
     args = ap.parse_args()
 
     try:
+        if args.border_check:
+            print(f"Talos border check — effect {args.effect}, sync VBL {SHOT_VBL}")
+            return border_check(args)
         print(f"Talos validation harness — effect {args.effect}, "
               f"sync VBL {SHOT_VBL}, capture VBL {CAP_VBL} (reg ${args.reg})")
         print("running reference #1 …");  ref1 = run(args, False, "ref1")

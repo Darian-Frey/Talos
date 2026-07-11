@@ -43,6 +43,7 @@ public:
     // Programmatic entry points (used by the GUI and by --selftest*).
     void startSession();
     void beginCapture(quint32 address, int count);
+    const QVector<WriteEvent> &capturedWrites() const { return m_writes; }
 
 signals:
     // Emitted whenever a fresh framebuffer is taken and displayed. beamVisible is

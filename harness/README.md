@@ -22,17 +22,23 @@ harness checks the two properties that keep it honest:
 Any divergence therefore implicates Talos's driving/config, not the emulation —
 the small search space D-009 is built around.
 
+Plus an effect-specific check for the left-border-removal case:
+
+- **Border open** — the lborder effect actually opens the left border on a band of
+  scanlines (the left-border column shows screen content, not the border colour).
+
 ## Running
 
 ```bash
-harness/run.sh                 # defaults: raster-bar effect, EmuTOS, the fork
-harness/run.sh --reg ffff8260  # watch a different register
+harness/run.sh                 # raster effect: determinism + non-perturbation
+harness/run-border.sh          # lborder effect: left border opens on a band
 # or directly:
 python3 harness/diff_harness.py --hatari <bin> --tos <rom> --effect <gemdos-dir>
+python3 harness/diff_harness.py ... --effect <lborder-dir> --border-check
 ```
 
 Requires `python3` with `numpy` + `Pillow`. Exit code 0 = all checks passed,
-1 = per-scanline divergence (rows listed), 2 = harness error.
+1 = per-scanline divergence / no border-open band, 2 = harness error.
 
 ## How it works
 

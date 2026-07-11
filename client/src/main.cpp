@@ -72,11 +72,13 @@ int main(int argc, char *argv[])
         "png");
     const QCommandLineOption optSelftestCapture(
         "selftest-capture",
-        "Headless CI check: run the --effect, capture writes to $ffff8240, save the "
-        "frame with write markers to <png>, exit.",
+        "Headless CI check: run the --effect, capture writes to --capture-reg, save "
+        "the frame with write markers to <png> and print the writes, exit.",
         "png");
+    const QCommandLineOption optCaptureReg(
+        "capture-reg", "Register (hex) for --selftest-capture.", "hex", "ffff8240");
     parser.addOptions({optHatari, optTos, optMachine, optHeadless, optAttach, optHost,
-                       optEffect, optSelftest, optSelftestCapture});
+                       optEffect, optSelftest, optSelftestCapture, optCaptureReg});
     parser.process(app);
 
     MainWindow::Config cfg;
@@ -124,9 +126,19 @@ int main(int argc, char *argv[])
 
     if (parser.isSet(optSelftestCapture)) {
         const QString outPng = parser.value(optSelftestCapture);
+        bool regOk = false;
+        const quint32 reg = parser.value(optCaptureReg).toUInt(&regOk, 16);
         auto *captured = new int(-1);
         QObject::connect(&window, &MainWindow::captureCompleted, &app,
-                         [captured](int n) { *captured = n; });
+                         [captured, &window](int n) {
+                             *captured = n;
+                             for (const WriteEvent &w : window.capturedWrites())
+                                 qInfo().noquote()
+                                     << "  write: HBL" << w.scanline << "cyc"
+                                     << w.cycleInLine
+                                     << QStringLiteral("$%1=%2")
+                                            .arg(w.address, 0, 16).arg(w.value, 0, 16);
+                         });
         // The post-capture frame (with write markers) follows captureCompleted.
         QObject::connect(&window, &MainWindow::frameReceived, &app,
                          [&app, outPng, captured](const QImage &frame, bool) {
@@ -144,8 +156,9 @@ int main(int argc, char *argv[])
             app.exit(2);
         });
         // Give EmuTOS time to boot and the AUTO effect to start writing (~14 s).
-        QTimer::singleShot(18000, &window,
-                           [&window]() { window.beginCapture(0xffff8240u, 48); });
+        QTimer::singleShot(18000, &window, [&window, reg]() {
+            window.beginCapture(reg, 48);
+        });
         QTimer::singleShot(0, &window, &MainWindow::startSession);
     }
 
