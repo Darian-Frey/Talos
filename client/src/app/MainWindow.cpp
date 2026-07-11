@@ -4,7 +4,9 @@
 #include "model/Palette.h"
 #include "protocol/RdbClient.h"
 #include "model/BlitterTrace.h"
+#include "model/DmaSndTrace.h"
 #include "view/BlitterTrafficView.h"
+#include "view/DmaSoundView.h"
 #include "view/CollapsibleDock.h"
 #include "view/FramebufferView.h"
 #include "view/PaletteView.h"
@@ -179,6 +181,11 @@ void MainWindow::buildUi()
         QStringLiteral("F-208 (B2): trace blitter memory traffic over a short run window"));
     connect(m_actBlitCapture, &QAction::triggered, this, &MainWindow::captureBlitTraffic);
 
+    m_actDmaCapture = tb->addAction(QStringLiteral("DMA capture"));
+    m_actDmaCapture->setToolTip(
+        QStringLiteral("F-209 (B2): trace DMA sound drain + LMC1992 EQ over a short run window"));
+    connect(m_actDmaCapture, &QAction::triggered, this, &MainWindow::captureDmaSound);
+
     m_fb = new FramebufferView(this);
     setCentralWidget(m_fb);
 
@@ -220,6 +227,12 @@ void MainWindow::buildUi()
         new CollapsibleDock(QStringLiteral("Blitter traffic"), m_blitView, this);
     addDockWidget(Qt::BottomDockWidgetArea, blitDock);
     tabifyDockWidget(tdock, blitDock);
+
+    // DMA sound + LMC1992 EQ view (F-209, B2): tabbed alongside the others.
+    m_dmaView = new DmaSoundView(this);
+    auto *dmaDock = new CollapsibleDock(QStringLiteral("DMA sound / EQ"), m_dmaView, this);
+    addDockWidget(Qt::BottomDockWidgetArea, dmaDock);
+    tabifyDockWidget(tdock, dmaDock);
     tdock->raise();   // timeline shown first
 
     // Machine capabilities / differential view (F-207).
@@ -654,6 +667,46 @@ void MainWindow::captureBlitTraffic()
     });
 }
 
+void MainWindow::captureDmaSound()
+{
+    if (!m_rdb || !m_rdb->isConnected())
+        return;
+    m_liveTimer->stop();
+    m_captureLabel->setStyleSheet(QString());
+    m_captureLabel->setText(QStringLiteral("DMA trace: running…"));
+    m_actDmaCapture->setEnabled(false);
+
+    m_rdb->sendCommand("dmatrace on");
+    m_rdb->run();
+    constexpr int kDmaWindowMs = 500;
+    QTimer::singleShot(kDmaWindowMs, this, [this] {
+        m_rdb->breakExec([this](const RdbClient::Tokens &) {
+            m_rdb->sendCommand("dmatrace", [this](const RdbClient::Tokens &r) {
+                const DmaSndTrace t = DmaSndTrace::parse(r);
+                m_dmaView->setTrace(t);
+                m_rdb->sendCommand("dmatrace off");
+
+                const bool any = !t.drain.isEmpty() || t.haveCtrl || !t.lmcSeq.isEmpty();
+                if (any) {
+                    m_captureLabel->setStyleSheet(QStringLiteral("color:#2e7d32;"));
+                    m_captureLabel->setText(
+                        QStringLiteral("DMA trace: %1 drain · %2 EQ changes%3 ✓")
+                            .arg(t.drain.size()).arg(t.lmcSeq.size())
+                            .arg(t.playing() ? QStringLiteral(" · playing") : QString()));
+                } else {
+                    m_captureLabel->setStyleSheet(QStringLiteral("color:#c62828;"));
+                    m_captureLabel->setText(
+                        QStringLiteral("DMA trace: no DMA sound activity in the run window"));
+                }
+                m_actDmaCapture->setEnabled(true);
+                refresh();
+                if (m_actLive->isChecked())
+                    m_liveTimer->start();
+            });
+        });
+    });
+}
+
 void MainWindow::onCaptureProgress(int count, int target)
 {
     m_captureLabel->setText(QStringLiteral("capture $%1: %2/%3…")
@@ -742,6 +795,7 @@ void MainWindow::setControlsEnabledForCapture(bool capturing)
     m_lineSpin->setEnabled(en);
     m_actCapture->setEnabled(en);
     m_actBlitCapture->setEnabled(en);
+    m_actDmaCapture->setEnabled(en);
     m_regEdit->setEnabled(en);
     m_countSpin->setEnabled(en);
 }
@@ -757,6 +811,7 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_lineSpin->setEnabled(connected);
     m_actCapture->setEnabled(connected);
     m_actBlitCapture->setEnabled(connected);
+    m_actDmaCapture->setEnabled(connected);
     m_regEdit->setEnabled(connected);
     m_countSpin->setEnabled(connected);
 }

@@ -61,7 +61,7 @@ The rule (D-005): **use B1 wherever it suffices; escalate to B2 per-feature only
 | GLUE video timing | `video.c` (horizontal/vertical counters, border state machine, sync/res register handling) | Beam (line, cycle-in-line) each step; border-open/close events with the triggering cycle |
 | Register write path | Hardware register write handlers (`ioMem*`) | `(address, value, absolute cycle, line, cycle-in-line)` for every write to a watched register |
 | Blitter | `blitter.c` — **confirmed (Phase 3):** `Blitter_ReadWord` (blitter.c:431) / `Blitter_WriteWord` (blitter.c:445) are the two memory-access choke points; the marker seam is the `y_count==0` branch of `Blitter_Start` (blitter.c:907). *Implemented as `patches/0001-tap-blitter-traffic.patch`, command `blittrace`.* | Per-operation source/dest addresses and word counts; bus-cycle occupancy |
-| DMA sound | `dmaSnd.c` | Frame pointer/counter, buffer fill/drain, mode register; Microwire/LMC1992 writes (master/bass/treble/balance) |
+| DMA sound | `dmaSnd.c` — **confirmed (Phase 3):** drain at `DmaSnd_FIFO_Refill`, bounds at `DmaSnd_StartNewFrame`, control at `DmaSnd_SoundControl_WriteWord`, EQ at the Microwire decode switch (dmaSnd.c:1129). *Implemented as `patches/0002-tap-dma-lmc1992.patch`, command `dmatrace`.* | Frame pointer/counter, buffer fill/drain, mode register; Microwire/LMC1992 writes (master/bass/treble/balance) |
 | Shifter palette | Shifter register handlers | Palette-register writes tagged with cycle, for the per-scanline palette reconstruction |
 | MFP 68901 | `mfp.c` | Timer B event-count ticks on display-enable transitions (the mechanism real code uses to fire per-scanline interrupts) |
 

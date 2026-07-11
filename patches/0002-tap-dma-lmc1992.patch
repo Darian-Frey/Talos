@@ -1,0 +1,202 @@
+diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
+index 63919571..99b66591 100644
+--- a/src/debug/remotedebug.c
++++ b/src/debug/remotedebug.c
+@@ -1148,6 +1148,52 @@ static int RemoteDebug_blittrace(int nArgc, char *psArgs[], RemoteDebugState* st
+ 	return 0;					/* ProcessBuffer appends the terminator */
+ }
+ 
++/**
++ * Talos B2 (F-209): DMA-sound + LMC1992 EQ trace. Same shape as `blittrace`.
++ *
++ *   dmatrace on|off|clear     -> "OK"
++ *   dmatrace                  -> "OK" <sep> <count:hex>
++ *     then per entry:  <sep> cycle_hi <sep> cycle_lo <sep> kind <sep> a <sep> b
++ *   kind: 0 FRAME(start,end) 1 DRAIN(counter,0) 2 CTRL(control,mode) 3 LMC(param,value).
++ */
++static int RemoteDebug_dmatrace(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc >= 2)
++	{
++		if (strcmp(psArgs[1], "on") == 0)
++			DmaSnd_Trace_SetEnabled(true);
++		else if (strcmp(psArgs[1], "off") == 0)
++			DmaSnd_Trace_SetEnabled(false);
++		else if (strcmp(psArgs[1], "clear") == 0)
++			DmaSnd_Trace_Clear();
++		else
++			return 1;
++		send_str(state, "OK");
++		return 0;
++	}
++
++	const DMASND_TRACE_ENTRY* entries = DmaSnd_Trace_GetEntries();
++	uint32_t count = DmaSnd_Trace_GetCount();
++
++	send_str(state, "OK");
++	send_sep(state);
++	send_hex(state, count);
++	for (uint32_t i = 0; i < count; ++i)
++	{
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle >> 32));
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle & 0xffffffff));
++		send_sep(state);
++		send_hex(state, entries[i].kind);
++		send_sep(state);
++		send_hex(state, entries[i].a);
++		send_sep(state);
++		send_hex(state, entries[i].b);
++	}
++	return 0;					/* ProcessBuffer appends the terminator */
++}
++
+ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_status,	"status"	, true		},
+ 	{ RemoteDebug_break,	"break"		, true		},
+@@ -1171,6 +1217,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_memfind,	"memfind"	, true		},
+ 	{ RemoteDebug_savebin,	"savebin"	, true		},
+ 	{ RemoteDebug_blittrace,"blittrace"	, true		},
++	{ RemoteDebug_dmatrace,	"dmatrace"	, true		},
+ 
+ 	/* Terminator */
+ 	{ NULL, NULL }
+diff --git a/src/dmaSnd.c b/src/dmaSnd.c
+index 0cd398e8..0fa01898 100644
+--- a/src/dmaSnd.c
++++ b/src/dmaSnd.c
+@@ -183,6 +183,46 @@ static struct dma_s dma;
+ static struct microwire_s microwire;
+ static struct lmc1992_s lmc1992;
+ 
++/* --- Talos B2 (F-209): opt-in DMA-sound + LMC1992 trace. See dmaSnd.h. ----- */
++/* Disabled by default; DmaSnd_Trace_Add() early-returns when off and only     */
++/* writes a host-side buffer, so it never perturbs emulation.                  */
++#define DMASND_TRACE_MAX	16384
++static DMASND_TRACE_ENTRY	DmaSndTrace[DMASND_TRACE_MAX];
++static uint32_t			DmaSndTraceCount;
++static bool			DmaSndTraceEnabled;
++static int			DmaSndLmcLast[6] = { -1, -1, -1, -1, -1, -1 };	/* latest LMC value per param, for the enable snapshot */
++
++static void DmaSnd_Trace_Add ( uint16_t kind , uint32_t a , uint32_t b )
++{
++	if ( !DmaSndTraceEnabled || DmaSndTraceCount >= DMASND_TRACE_MAX )
++		return;
++	DmaSndTrace[DmaSndTraceCount].cycle = CyclesGlobalClockCounter;
++	DmaSndTrace[DmaSndTraceCount].kind  = kind;
++	DmaSndTrace[DmaSndTraceCount].a     = a;
++	DmaSndTrace[DmaSndTraceCount].b     = b;
++	DmaSndTraceCount++;
++}
++
++void DmaSnd_Trace_SetEnabled ( bool on )
++{
++	DmaSndTraceEnabled = on;
++	if ( on )
++	{
++		DmaSndTraceCount = 0;			/* fresh capture on enable */
++		/* Snapshot the current state so a capture is self-contained even when
++		 * the program set control / buffer / EQ up before tracing was enabled. */
++		DmaSnd_Trace_Add ( DMATRACE_CTRL , nDmaSoundControl , dma.soundMode );
++		DmaSnd_Trace_Add ( DMATRACE_FRAME , dma.frameStartAddr , dma.frameEndAddr );
++		for ( int p = 0 ; p < 6 ; p++ )
++			if ( DmaSndLmcLast[p] >= 0 )
++				DmaSnd_Trace_Add ( DMATRACE_LMC , p , DmaSndLmcLast[p] );
++	}
++}
++bool DmaSnd_Trace_IsEnabled ( void )		{ return DmaSndTraceEnabled; }
++void DmaSnd_Trace_Clear ( void )		{ DmaSndTraceCount = 0; }
++uint32_t DmaSnd_Trace_GetCount ( void )		{ return DmaSndTraceCount; }
++const DMASND_TRACE_ENTRY *DmaSnd_Trace_GetEntries ( void )	{ return DmaSndTrace; }
++
+ /* dB = 20log(gain)  :  gain = antilog(dB/20)                                */
+ /* Table gain values = (int)(powf(10.0, dB/20.0)*65536.0 + 0.5)  2dB steps   */
+ 
+@@ -366,6 +406,8 @@ static void DmaSnd_FIFO_Refill(void)
+ 				break;				/* Loop mode off, dma audio is now turned off */
+ 		}
+ 	}
++
++	DmaSnd_Trace_Add ( DMATRACE_DRAIN , dma.frameCounterAddr , 0 );	/* Talos B2 (F-209): play head, ~1/HBL */
+ }
+ 
+ 
+@@ -466,6 +508,8 @@ static void DmaSnd_StartNewFrame(void)
+ 
+ 	dma.frameCounterAddr = dma.frameStartAddr;
+ 
++	DmaSnd_Trace_Add ( DMATRACE_FRAME , dma.frameStartAddr , dma.frameEndAddr );	/* Talos B2 (F-209) */
++
+ 	LOG_TRACE(TRACE_DMASND, "DMA snd new frame start=%x end=%x\n", dma.frameStartAddr, dma.frameEndAddr);
+ 
+ 	if ( ( dma.frameStartAddr == dma.frameEndAddr ) && ( ( nDmaSoundControl & DMASNDCTRL_PLAYLOOP ) == 0 ) )
+@@ -816,6 +860,8 @@ void DmaSnd_SoundControl_WriteWord(void)
+ 		LOG_TRACE(TRACE_DMASND, "DMA snd control write: stopping dma sound output\n");
+ 		DmaSnd_Update_XSINT_Line ( MFP_GPIP_STATE_LOW );		/* O/LOW=dma sound idle */
+ 	}
++
++	DmaSnd_Trace_Add ( DMATRACE_CTRL , nDmaSoundControl , dma.soundMode );	/* Talos B2 (F-209) */
+ }
+ 
+ 
+@@ -1170,6 +1216,19 @@ void DmaSnd_InterruptHandler_Microwire(void)
+ 				LOG_TRACE ( TRACE_DMASND, "Microwire unknown command=0x%x len=%d ignored mask=0x%x data=0x%x\n", cmd , cmd_len , microwire.mask , microwire.data );
+ 				break;
+ 		}
++
++		/* Talos B2 (F-209): record the decoded LMC1992 setting change (and keep
++		 * the latest value per param so an enable snapshot can report it). */
++		{
++			static const uint16_t lmcMask[6] = { 0x3, 0xf, 0xf, 0x3f, 0x1f, 0x1f };
++			const int lmcParam = ( cmd >> 6 ) & 0x7;
++			if ( lmcParam <= 5 )
++			{
++				const int lmcValue = cmd & lmcMask[lmcParam];
++				DmaSndLmcLast[lmcParam] = lmcValue;
++				DmaSnd_Trace_Add ( DMATRACE_LMC , lmcParam , lmcValue );
++			}
++		}
+ 	}
+ }
+ 
+diff --git a/src/includes/dmaSnd.h b/src/includes/dmaSnd.h
+index 02bd38ae..306073c4 100644
+--- a/src/includes/dmaSnd.h
++++ b/src/includes/dmaSnd.h
+@@ -52,4 +52,34 @@ extern void DmaSnd_Info(FILE *fp, uint32_t dummy);
+ /* Sync memory/state that might need to be inspected by the Remote Debug system */
+ extern void DmaSnd_RemoteDebugSync(void);
+ 
++/* --- Talos B2 (F-209): opt-in DMA-sound + LMC1992 trace ------------------- */
++/* Records the sample buffer draining and the LMC1992 EQ settings changing, so */
++/* the remote-debug client can visualise both. Off by default; enabling only   */
++/* fills a host-side buffer and never touches emulated cycles or memory, so it  */
++/* does not perturb emulation (keeps the D-009 diff harness honest).           */
++typedef struct
++{
++	uint64_t	cycle;		/* CyclesGlobalClockCounter at the event */
++	uint16_t	kind;		/* DMATRACE_* (below) */
++	uint32_t	a;		/* kind-specific */
++	uint32_t	b;		/* kind-specific */
++} DMASND_TRACE_ENTRY;
++
++/* kind -> (a, b):
++ *   FRAME : frameStartAddr , frameEndAddr    (new sample-buffer bounds)
++ *   DRAIN : frameCounterAddr , 0             (play head, sampled ~1/HBL)
++ *   CTRL  : nDmaSoundControl , soundMode     (play/loop bits + freq/mono)
++ *   LMC   : param (0..5) , value             (EQ setting change; param =
++ *           0 mix, 1 bass, 2 treble, 3 master, 4 right, 5 left) */
++#define DMATRACE_FRAME	0
++#define DMATRACE_DRAIN	1
++#define DMATRACE_CTRL	2
++#define DMATRACE_LMC	3
++
++extern void			DmaSnd_Trace_SetEnabled ( bool on );
++extern bool			DmaSnd_Trace_IsEnabled ( void );
++extern void			DmaSnd_Trace_Clear ( void );
++extern uint32_t			DmaSnd_Trace_GetCount ( void );
++extern const DMASND_TRACE_ENTRY *DmaSnd_Trace_GetEntries ( void );
++
+ #endif /* HATARI_DMASND_H */

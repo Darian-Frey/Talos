@@ -37,3 +37,11 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-blit/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-blit/AUTO/BLIT.PRG" \
   "${REPO_ROOT}/tests/effects/blitfill.s"
 echo ">> built tests/effects/disk-blit/AUTO/BLIT.PRG"
+
+# dmasound: looping DMA sample + LMC1992 EQ sweep (F-209), for the DMA/EQ view.
+# Needs DMA sound + LMC1992 (STE / Mega STE).
+mkdir -p "${REPO_ROOT}/tests/effects/disk-dma/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-dma/AUTO/DMA.PRG" \
+  "${REPO_ROOT}/tests/effects/dmasound.s"
+echo ">> built tests/effects/disk-dma/AUTO/DMA.PRG"

@@ -18,10 +18,12 @@ add_executable(talos
   src/session/HatariLauncher.cpp
   src/model/MachineState.cpp
   src/model/BlitterTrace.cpp
+  src/model/DmaSndTrace.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
   src/view/BlitterTrafficView.cpp
+  src/view/DmaSoundView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

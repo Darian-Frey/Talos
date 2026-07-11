@@ -115,6 +115,29 @@ The buffer caps at 16384 entries. Taps: `blitter.c` `Blitter_ReadWord` /
 `Blitter_WriteWord` (each memory access) and the `y_count==0` branch of
 `Blitter_Start` (the marker); `cycle` is `CyclesGlobalClockCounter`.
 
+### `dmatrace` — DMA sound + LMC1992 EQ trace (F-209, `patches/0002-*`)
+
+Backs the DMA sound / EQ view. Same shape and opt-in semantics as `blittrace`.
+Enabling it (`dmatrace on`) also emits a **snapshot** of the current control,
+buffer bounds and every LMC1992 setting, so a capture is self-contained even
+when the program set things up before tracing began.
+
+| Form | Effect | Reply |
+|---|---|---|
+| `dmatrace on` | enable + clear + snapshot current state | `OK` |
+| `dmatrace off` | disable | `OK` |
+| `dmatrace clear` | clear without disabling | `OK` |
+| `dmatrace` | dump accumulated entries | see below |
+
+Dump reply: `OK` `0x1` `<count:hex>` then, per entry, five `0x1`-separated hex
+tokens — `cycle_hi` `cycle_lo` `kind` `a` `b`. Kinds (`dmaSnd.h`): `0` FRAME
+(a=start, b=end sample-buffer bounds), `1` DRAIN (a=play-head addr, sampled
+~1/HBL), `2` CTRL (a=control bits — bit0 play/bit1 loop, b=mode — bits0-1 freq
+index/bit7 mono), `3` LMC (a=param 0 mix/1 bass/2 treble/3 master/4 R/5 L,
+b=value). Taps: `dmaSnd.c` `DmaSnd_FIFO_Refill` (drain), `DmaSnd_StartNewFrame`
+(frame), `DmaSnd_SoundControl_WriteWord` (control), the Microwire decode switch
+(EQ); `cycle` is `CyclesGlobalClockCounter`.
+
 ## Function seam noted for the B2 video tap
 
 `Video_GetPosition(&frameCycles, &lineNumber?, &lineCycles)` in `src/video.c` is

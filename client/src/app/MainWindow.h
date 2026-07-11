@@ -20,6 +20,7 @@ class RdbClient;
 class FramebufferView;
 class PaletteView;
 class BlitterTrafficView;
+class DmaSoundView;
 class CaptureController;
 class QImage;
 class QAction;
@@ -75,6 +76,7 @@ private slots:
     void runToLine();   // park the beam on a chosen visible scanline (F-203)
     void onCaptureClicked();
     void captureBlitTraffic();   // F-208: enable trace, run a window, dump + show
+    void captureDmaSound();      // F-209: enable trace, run a window, dump + show
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
     void onTimelineRowChanged(int row);
@@ -102,6 +104,7 @@ private:
     FramebufferView *m_fb = nullptr;
     PaletteView *m_palette = nullptr;
     BlitterTrafficView *m_blitView = nullptr;
+    DmaSoundView *m_dmaView = nullptr;
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;
     QTemporaryDir m_shotDir;
@@ -123,6 +126,7 @@ private:
     QSpinBox *m_lineSpin = nullptr;
     QAction *m_actCapture = nullptr;
     QAction *m_actBlitCapture = nullptr;
+    QAction *m_actDmaCapture = nullptr;
     QLineEdit *m_regEdit = nullptr;
     QSpinBox *m_countSpin = nullptr;
     QTableWidget *m_timeline = nullptr;

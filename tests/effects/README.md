@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), Phase 1.
-> **Last reviewed:** 2026-07-10
+> **Last reviewed:** 2026-07-11
 > **Why this status:** First effect (rasterbars) built and verified driving the B1 register-write capture. More (border removal, etc.) come as harder harness cases.
 
 ---
@@ -14,6 +14,11 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `dmasound.s` — **DMA sound + LMC1992 EQ sweep** (Phase 3, F-209): plays a
+  looping sawtooth sample through the STE DMA sound hardware and continuously
+  sweeps bass/treble via the Microwire interface, so a `dmatrace` capture catches
+  the buffer draining and the EQ responding. Needs DMA sound + LMC1992: run on
+  **STE / Mega STE**. Built to `disk-dma/AUTO/DMA.PRG`. Drives the DMA sound / EQ view.
 - `blitfill.s` — **continuous blitter copies** (Phase 3, F-208): repeatedly blits
   a 16×16-word source buffer to the top-left of the screen (HOP=source,
   LOP=replace), so a `blittrace` capture always catches steady memory traffic
