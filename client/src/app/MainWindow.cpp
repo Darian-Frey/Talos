@@ -13,7 +13,11 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include "view/FramebufferView.h"
 #include "view/PaletteView.h"
@@ -273,6 +277,7 @@ void MainWindow::buildUi()
     tabifyDockWidget(tdock, rasterDock);
     connect(m_raster, &RasterWorkspace::buildRequested, this, &MainWindow::buildRasterEffect);
     connect(m_raster, &RasterWorkspace::verifyRequested, this, &MainWindow::verifyRasterEffect);
+    connect(m_raster, &RasterWorkspace::exportRequested, this, &MainWindow::exportRasterEffect);
 
     tdock->raise();   // timeline shown first
 
@@ -887,6 +892,68 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
                 proc->deleteLater();
             });
     proc->start(QStringLiteral("python3"), args);
+}
+
+void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
+{
+    if (bars.isEmpty()) {
+        m_raster->setResult(QStringLiteral("Add at least one bar first."), false);
+        return;
+    }
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Export raster effect to folder"));
+    if (dir.isEmpty())
+        return;   // cancelled
+
+    // 1. The asm stub (the runnable export artefact).
+    QFile s(QDir(dir).filePath(QStringLiteral("raster.s")));
+    if (!s.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_raster->setResult(QStringLiteral("could not write to %1").arg(dir), false);
+        return;
+    }
+    s.write(RasterCodegen::generate(bars).toUtf8());
+    s.close();
+
+    // 2. The register sequence (portable data form): each bar is a write of the
+    //    background-colour register at a scanline, tagged with machine/region.
+    QVector<RasterCodegen::Bar> sorted = bars;
+    std::sort(sorted.begin(), sorted.end(),
+              [](const auto &a, const auto &b) { return a.line < b.line; });
+    QJsonArray writes;
+    for (const auto &b : sorted)
+        writes.append(QJsonObject{
+            {QStringLiteral("scanline"), b.line},
+            {QStringLiteral("value"), QStringLiteral("%1").arg(b.colour, 3, 16, QLatin1Char('0'))}});
+    const QJsonObject seq{
+        {QStringLiteral("effect"), QStringLiteral("raster-bars")},
+        {QStringLiteral("generator"), QStringLiteral("Talos F-212")},
+        {QStringLiteral("machine"), QStringLiteral("st")},
+        {QStringLiteral("region"), QStringLiteral("pal")},
+        {QStringLiteral("cyclesPerLine"), RasterCodegen::kCycPerLine},
+        {QStringLiteral("register"), QStringLiteral("ff8240")},
+        {QStringLiteral("writes"), writes}};
+    QFile j(QDir(dir).filePath(QStringLiteral("raster.json")));
+    if (j.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        j.write(QJsonDocument(seq).toJson());
+        j.close();
+    }
+
+    // 3. Assemble the runnable .PRG alongside (best-effort).
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    QString prgNote;
+    if (QFileInfo::exists(vasm)) {
+        QProcess p;
+        p.start(vasm, {QStringLiteral("-Ftos"), QStringLiteral("-o"),
+                       QDir(dir).filePath(QStringLiteral("RASTER.PRG")),
+                       QDir(dir).filePath(QStringLiteral("raster.s"))});
+        prgNote = (p.waitForFinished(5000) && p.exitCode() == 0)
+                      ? QStringLiteral(" + RASTER.PRG")
+                      : QString();
+    }
+
+    m_raster->setResult(
+        QStringLiteral("Exported raster.s + raster.json%1 to %2").arg(prgNote, dir), true);
 }
 
 void MainWindow::onCaptureProgress(int count, int target)

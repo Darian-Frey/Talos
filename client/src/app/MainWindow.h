@@ -83,6 +83,7 @@ private slots:
     void captureDmaSound();      // F-209: enable trace, run a window, dump + show
     void buildRasterEffect(const QVector<RasterCodegen::Bar> &bars);   // F-212 codegen+run
     void verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 round-trip
+    void exportRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 asm + sequence
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
     void onTimelineRowChanged(int row);

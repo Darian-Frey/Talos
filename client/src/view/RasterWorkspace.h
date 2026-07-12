@@ -28,6 +28,7 @@ public:
 signals:
     void buildRequested(const QVector<RasterCodegen::Bar> &bars);
     void verifyRequested(const QVector<RasterCodegen::Bar> &bars);
+    void exportRequested(const QVector<RasterCodegen::Bar> &bars);
 
 private:
     void addBar(int line, quint16 colour);

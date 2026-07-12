@@ -39,13 +39,16 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     auto *del = new QPushButton(QStringLiteral("－"), m_actions);
     auto *build = new QPushButton(QStringLiteral("Build & Run"), m_actions);
     auto *verify = new QPushButton(QStringLiteral("Verify on Hatari"), m_actions);
+    auto *xport = new QPushButton(QStringLiteral("Export…"), m_actions);
     build->setToolTip(QStringLiteral("Codegen -> vasm -> run the effect in Hatari (F-212)"));
     verify->setToolTip(QStringLiteral("Run the exported stub through the round-trip harness"));
+    xport->setToolTip(QStringLiteral("Write the .s stub, assembled .PRG and register sequence to a folder"));
     btns->addWidget(add);
     btns->addWidget(del);
     btns->addStretch();
     btns->addWidget(build);
     btns->addWidget(verify);
+    btns->addWidget(xport);
     lay->addWidget(m_actions);
 
     m_result = new QLabel(QString(), this);
@@ -64,6 +67,8 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
             [this] { emit buildRequested(bars()); });
     connect(verify, &QPushButton::clicked, this,
             [this] { emit verifyRequested(bars()); });
+    connect(xport, &QPushButton::clicked, this,
+            [this] { emit exportRequested(bars()); });
 
     // Seed with a rainbow so the workspace is usable immediately.
     const quint16 rainbow[] = {0x700, 0x070, 0x007, 0x770, 0x707, 0x077, 0x777};
