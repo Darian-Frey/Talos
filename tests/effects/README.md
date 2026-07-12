@@ -14,6 +14,11 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `megaspeed.s` — **Mega STE dual-speed demonstrator** (Phase 3, F-210): a
+  VBL-locked colour hammer whose horizontal band density tracks the CPU clock —
+  ~2× as many bands at 16 MHz as at 8 MHz (same beam, twice the per-scanline
+  cycle budget). Launch on **Mega STE** and toggle the client's 8/16 MHz clock
+  (pure B1: it relaunches with `--cpuclock`). Built to `disk-megaspeed/AUTO/MSPEED.PRG`.
 - `dmasound.s` — **DMA sound + LMC1992 EQ sweep** (Phase 3, F-209): plays a
   looping sawtooth sample through the STE DMA sound hardware and continuously
   sweeps bass/treble via the Microwire interface, so a `dmatrace` capture catches

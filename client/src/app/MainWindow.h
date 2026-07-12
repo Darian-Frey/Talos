@@ -66,6 +66,7 @@ private slots:
     void onMachineChanged(int index);
     void onRegionChanged(int index);
     void onLanguageChanged(int index);
+    void onClockChanged(int index);   // Mega STE 8/16 MHz (F-210) -> relaunch
     void onConnected();
     void onConnectionFailed(const QString &reason);
     void onNotification(const QByteArray &name, const QList<QByteArray> &args);
@@ -113,6 +114,7 @@ private:
     QComboBox *m_machineCombo = nullptr;
     QComboBox *m_languageCombo = nullptr;
     QComboBox *m_regionCombo = nullptr;
+    QComboBox *m_clockCombo = nullptr;   // CPU clock 8/16 MHz (dual-speed machines only)
     QLabel *m_capsLabel = nullptr;
 
     QAction *m_actStart = nullptr;

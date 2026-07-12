@@ -115,6 +115,13 @@ void MainWindow::buildUi()
     m_regionCombo->addItems({QStringLiteral("PAL"), QStringLiteral("NTSC")});
     m_regionCombo->setToolTip(QStringLiteral("Video region (50/60 Hz)"));
     tb->addWidget(m_regionCombo);
+    m_clockCombo = new QComboBox(this);
+    m_clockCombo->addItem(QStringLiteral("8 MHz"), 8);
+    m_clockCombo->addItem(QStringLiteral("16 MHz"), 16);
+    m_clockCombo->setCurrentIndex(1);   // Mega STE native speed
+    m_clockCombo->setToolTip(
+        QStringLiteral("Mega STE CPU clock (F-210): 16 MHz doubles the per-scanline cycle budget"));
+    tb->addWidget(m_clockCombo);
     tb->addSeparator();
 
     m_actStart = tb->addAction(m_config.attachOnly ? QStringLiteral("Connect")
@@ -294,6 +301,8 @@ void MainWindow::buildUi()
             this, &MainWindow::onLanguageChanged);
     connect(m_regionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onRegionChanged);
+    connect(m_clockCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onClockChanged);
     reconcileRegion();       // also calls updateCapabilities()
     updateLaunchStopState();
 }
@@ -307,6 +316,9 @@ void MainWindow::onStartClicked()
 {
     if (!m_config.attachOnly) {
         m_config.hatari.machine = Machines::info(m_machine).hatariMachine;
+        // Only dual-speed machines get an explicit clock; others use the default.
+        m_config.hatari.cpuClock =
+            Machines::info(m_machine).dualSpeed ? m_clockCombo->currentData().toInt() : 0;
         m_config.hatari.country = Languages::country(m_language, m_region);
         if (!m_launcher->launch(m_config.hatari))
             return;
@@ -361,6 +373,12 @@ void MainWindow::onLanguageChanged(int index)
         return;
     m_language = langs[index];
     reconcileRegion();
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+}
+
+void MainWindow::onClockChanged(int)
+{
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -422,7 +440,13 @@ void MainWindow::updateCapabilities()
               QStringLiteral("<b>%1</b> colours").arg(m.paletteColours))
         + row(QStringLiteral("Hardware scroll"), m.hardwareScroll)
         + row(QStringLiteral("DMA sound"), m.dmaSound)
-        + row(QStringLiteral("Dual-speed 16&nbsp;MHz"), m.dualSpeed));
+        + row(QStringLiteral("Dual-speed 16&nbsp;MHz"), m.dualSpeed,
+              m.dualSpeed ? QStringLiteral("&mdash; running at <b>%1&nbsp;MHz</b>")
+                                .arg(m_clockCombo->currentData().toInt())
+                          : QString()));
+
+    // The clock selector only applies to dual-speed machines (Mega STE).
+    m_clockCombo->setEnabled(m.dualSpeed);
 }
 
 void MainWindow::onConnected()

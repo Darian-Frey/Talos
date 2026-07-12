@@ -56,6 +56,8 @@ bool HatariLauncher::launch(const Config &cfg)
     args << "--machine" << cfg.machine
          << "--tos" << cfg.tosImage
          << "--sound" << "off";
+    if (cfg.cpuClock == 8 || cfg.cpuClock == 16)
+        args << "--cpuclock" << QString::number(cfg.cpuClock);   // Mega STE 8/16 MHz (F-210)
     if (!cfg.country.isEmpty())
         args << "--country" << cfg.country;   // selects PAL/NTSC via the TOS
     if (cfg.hideStatusBar)

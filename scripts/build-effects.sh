@@ -45,3 +45,11 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-dma/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-dma/AUTO/DMA.PRG" \
   "${REPO_ROOT}/tests/effects/dmasound.s"
 echo ">> built tests/effects/disk-dma/AUTO/DMA.PRG"
+
+# megaspeed: VBL-locked colour hammer (F-210), band density tracks CPU clock.
+# Meant for Mega STE launched at --cpuclock 8 vs 16.
+mkdir -p "${REPO_ROOT}/tests/effects/disk-megaspeed/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-megaspeed/AUTO/MSPEED.PRG" \
+  "${REPO_ROOT}/tests/effects/megaspeed.s"
+echo ">> built tests/effects/disk-megaspeed/AUTO/MSPEED.PRG"
