@@ -43,3 +43,8 @@ compile_commands.json
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Exported raster-effect artefacts (F-212 Export target), not source
+/tests/effects/raster.s
+/tests/effects/raster.json
+/tests/effects/RASTER.PRG
