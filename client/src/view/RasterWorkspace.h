@@ -1,0 +1,39 @@
+// RasterWorkspace — Phase 4 (F-211): author a raster-bar effect, then build/verify.
+//
+// A small table of (scanline, colour) bars plus actions:
+//   Build & Run  — codegen -> vasm -> relaunch Hatari with the effect (preview)
+//   Verify       — run the exported stub through the round-trip harness
+// The widget only edits the bar list and emits requests; MainWindow does the work.
+
+#pragma once
+
+#include "model/RasterCodegen.h"
+
+#include <QVector>
+#include <QWidget>
+
+class QTableWidget;
+class QLabel;
+
+class RasterWorkspace : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit RasterWorkspace(QWidget *parent = nullptr);
+
+    QVector<RasterCodegen::Bar> bars() const;
+    void setBusy(bool busy);                 // disable actions during build/verify
+    void setResult(const QString &text, bool ok);
+
+signals:
+    void buildRequested(const QVector<RasterCodegen::Bar> &bars);
+    void verifyRequested(const QVector<RasterCodegen::Bar> &bars);
+
+private:
+    void addBar(int line, quint16 colour);
+    void recolourRow(int row, int col);   // matches QTableWidget::cellChanged
+
+    QTableWidget *m_table = nullptr;
+    QLabel *m_result = nullptr;
+    QWidget *m_actions = nullptr;   // the button row (disabled while busy)
+};

@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), built and passing 2026-07-10.
-> **Last reviewed:** 2026-07-10
-> **Why this status:** First form of the harness is implemented and green (determinism + non-perturbation). Broadens over the phases (D-009): border-removal case, per machine/region, B2 taps.
+> **Last reviewed:** 2026-07-12
+> **Why this status:** First form of the harness is implemented and green (determinism + non-perturbation). Broadens over the phases (D-009): border-removal case, per machine/region, B2 taps. Phase 4 adds `raster_roundtrip.py` — the prototype→export→verify round-trip.
 
 ---
 
@@ -39,6 +39,19 @@ python3 harness/diff_harness.py ... --effect <lborder-dir> --border-check
 
 Requires `python3` with `numpy` + `Pillow`. Exit code 0 = all checks passed,
 1 = per-scanline divergence / no border-open band, 2 = harness error.
+
+## Raster round-trip (F-211/F-212, Phase 4)
+
+`raster_roundtrip.py` proves the prototype→export→verify loop: it codegens a
+cycle-exact raster-bar 68k stub from a bar list, assembles it with vasm, runs it
+in Hatari, and verifies the authored bar colours reproduce as horizontal bands in
+order. The client's Raster workspace drives the same codegen (C++) for preview and
+shells this tool for "Verify on Hatari".
+
+```bash
+python3 harness/raster_roundtrip.py --hatari <bin> --tos <rom> \
+    --bar 20:700 --bar 90:070 --bar 160:007   # (LINE:RGB; default = 7-bar rainbow)
+```
 
 ## How it works
 

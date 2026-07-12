@@ -5,9 +5,16 @@
 #include "protocol/RdbClient.h"
 #include "model/BlitterTrace.h"
 #include "model/DmaSndTrace.h"
+#include "model/RasterCodegen.h"
 #include "view/BlitterTrafficView.h"
 #include "view/DmaSoundView.h"
+#include "view/RasterWorkspace.h"
 #include "view/CollapsibleDock.h"
+
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QProcess>
 #include "view/FramebufferView.h"
 #include "view/PaletteView.h"
 
@@ -258,6 +265,15 @@ void MainWindow::buildUi()
     auto *dmaDock = new CollapsibleDock(QStringLiteral("DMA sound / EQ"), m_dmaView, this);
     addDockWidget(Qt::BottomDockWidgetArea, dmaDock);
     tabifyDockWidget(tdock, dmaDock);
+
+    // Raster-bar prototyping workspace (F-211/F-212, Phase 4).
+    m_raster = new RasterWorkspace(this);
+    auto *rasterDock = new CollapsibleDock(QStringLiteral("Raster workspace"), m_raster, this);
+    addDockWidget(Qt::BottomDockWidgetArea, rasterDock);
+    tabifyDockWidget(tdock, rasterDock);
+    connect(m_raster, &RasterWorkspace::buildRequested, this, &MainWindow::buildRasterEffect);
+    connect(m_raster, &RasterWorkspace::verifyRequested, this, &MainWindow::verifyRasterEffect);
+
     tdock->raise();   // timeline shown first
 
     // Machine capabilities / differential view (F-207).
@@ -760,6 +776,117 @@ void MainWindow::captureDmaSound()
             });
         });
     });
+}
+
+namespace {
+// <repo>/external/hatari/build/src/hatari  ->  <repo>
+QString repoRootFrom(const QString &hatariBinary)
+{
+    QDir d(QFileInfo(hatariBinary).absolutePath());   // .../external/hatari/build/src
+    for (int i = 0; i < 4; ++i)
+        d.cdUp();                                      // -> repo root
+    return d.absolutePath();
+}
+}   // namespace
+
+void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
+{
+    if (bars.isEmpty()) {
+        m_raster->setResult(QStringLiteral("Add at least one bar first."), false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    if (!QFileInfo::exists(vasm)) {
+        m_raster->setResult(QStringLiteral("vasm not found — run scripts/bootstrap-vasm.sh"), false);
+        return;
+    }
+    if (!m_rasterDir.isValid()) {
+        m_raster->setResult(QStringLiteral("no scratch directory"), false);
+        return;
+    }
+
+    const QString srcPath = m_rasterDir.filePath(QStringLiteral("raster.s"));
+    QDir(m_rasterDir.path()).mkpath(QStringLiteral("AUTO"));
+    QFile f(srcPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_raster->setResult(QStringLiteral("could not write raster.s"), false);
+        return;
+    }
+    f.write(RasterCodegen::generate(bars).toUtf8());
+    f.close();
+
+    m_raster->setBusy(true);
+    m_raster->setResult(QStringLiteral("Assembling…"), true);
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this,
+            [this, proc, repo](int code, QProcess::ExitStatus) {
+                m_raster->setBusy(false);
+                if (code != 0) {
+                    m_raster->setResult(QStringLiteral("vasm failed: %1").arg(
+                        QString::fromUtf8(proc->readAllStandardError()).left(200)), false);
+                } else {
+                    // Preview on ST/PAL to match the codegen's timing (512 cyc/line).
+                    {
+                        const QSignalBlocker b1(m_machineCombo), b2(m_regionCombo);
+                        m_machine = MachineType::ST;
+                        m_region = VideoRegion::Pal50;
+                        m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
+                        m_regionCombo->setCurrentIndex(0);
+                    }
+                    updateCapabilities();
+                    m_config.hatari.gemdosDir = m_rasterDir.path();
+                    m_raster->setResult(QStringLiteral("Built RASTER.PRG — launching on ST/PAL…"), true);
+                    if (m_launcher->isRunning() || m_rdb->isConnected())
+                        relaunch();
+                    else
+                        onStartClicked();
+                }
+                proc->deleteLater();
+            });
+    proc->start(vasm, {QStringLiteral("-Ftos"),
+                       QStringLiteral("-o"), m_rasterDir.filePath(QStringLiteral("AUTO/RASTER.PRG")),
+                       srcPath});
+}
+
+void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
+{
+    if (bars.isEmpty()) {
+        m_raster->setResult(QStringLiteral("Add at least one bar first."), false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString tool = repo + QStringLiteral("/harness/raster_roundtrip.py");
+    if (!QFileInfo::exists(tool)) {
+        m_raster->setResult(QStringLiteral("round-trip harness not found: %1").arg(tool), false);
+        return;
+    }
+    // The harness launches its own Hatari on the fixed port, so free ours first.
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        doStop();
+
+    QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                     QStringLiteral("--tos"), m_config.hatari.tosImage};
+    for (const auto &b : bars)
+        args << QStringLiteral("--bar")
+             << QStringLiteral("%1:%2").arg(b.line).arg(b.colour, 0, 16);
+
+    m_raster->setBusy(true);
+    m_raster->setResult(QStringLiteral("Verifying on Hatari (headless, ~15 s)…"), true);
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this,
+            [this, proc](int code, QProcess::ExitStatus) {
+                m_raster->setBusy(false);
+                const QString out = QString::fromUtf8(proc->readAllStandardOutput());
+                const bool ok = (code == 0) && out.contains(QStringLiteral("RESULT: PASS"));
+                m_raster->setResult(
+                    ok ? QStringLiteral("Verified ✓ — authored bars reproduced in stock Hatari")
+                       : QStringLiteral("Verify FAILED — %1").arg(
+                             out.section('\n', -2).trimmed()),
+                    ok);
+                proc->deleteLater();
+            });
+    proc->start(QStringLiteral("python3"), args);
 }
 
 void MainWindow::onCaptureProgress(int count, int target)

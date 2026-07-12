@@ -12,6 +12,7 @@
 
 #include "model/Machine.h"
 #include "model/MachineState.h"
+#include "model/RasterCodegen.h"
 #include "model/WriteEvent.h"
 #include "session/HatariLauncher.h"
 #include "view/BeamGeometry.h"
@@ -21,7 +22,9 @@ class FramebufferView;
 class PaletteView;
 class BlitterTrafficView;
 class DmaSoundView;
+class RasterWorkspace;
 class CaptureController;
+class QProcess;
 class QImage;
 class QAction;
 class QTableWidget;
@@ -78,6 +81,8 @@ private slots:
     void onCaptureClicked();
     void captureBlitTraffic();   // F-208: enable trace, run a window, dump + show
     void captureDmaSound();      // F-209: enable trace, run a window, dump + show
+    void buildRasterEffect(const QVector<RasterCodegen::Bar> &bars);   // F-212 codegen+run
+    void verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 round-trip
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
     void onTimelineRowChanged(int row);
@@ -106,6 +111,9 @@ private:
     PaletteView *m_palette = nullptr;
     BlitterTrafficView *m_blitView = nullptr;
     DmaSoundView *m_dmaView = nullptr;
+    RasterWorkspace *m_raster = nullptr;
+    QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG
+    QProcess *m_rasterProc = nullptr;     // vasm / verify subprocess (one at a time)
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;
     QTemporaryDir m_shotDir;

@@ -3,7 +3,7 @@
 > **Status:** Active
 > **Provenance:** Design session with Claude (primary architect/auditor).
 > **Last reviewed:** 2026-07-12
-> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–3 implemented (M0–M3 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, and all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210). Phase 4 (effect prototyping + export) is next.
+> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–3 implemented (M0–M3 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, and all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210). Phase 4 started: the raster-bar prototype→export→verify round-trip is in (F-211/F-212 pilot — client workspace + `raster_roundtrip.py`); intra-line effects (Spectrum 512) and register-sequence export remain toward M4.
 
 ---
 
