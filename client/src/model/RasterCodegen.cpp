@@ -73,4 +73,45 @@ QString generate(QVector<Bar> bars, int pad, int delay, int total)
         .arg(tab);
 }
 
+QString generateSplit(const QVector<quint16> &colours)
+{
+    QString body;
+    for (int i = 0; i < colours.size() && i < kMaxBands; ++i)
+        body += QStringLiteral("    move.w  #$%1,PAL0\n")
+                    .arg(colours[i] & 0x777, 3, 16, QLatin1Char('0'));
+
+    return QStringLiteral(
+        "; split.s — Talos Phase 4 generated intra-line bands (F-212). Do not hand-edit.\n"
+        "IERA    equ $fffffa07\n"
+        "IERB    equ $fffffa09\n"
+        "PAL0    equ $ffff8240\n"
+        "    text\n"
+        "start:\n"
+        "    clr.l   -(sp)\n"
+        "    move.w  #$20,-(sp)\n"
+        "    trap    #1\n"
+        "    addq.l  #6,sp\n"
+        "    move.b  #0,IERA              ; MFP off -> only HBL/VBL fire\n"
+        "    move.b  #0,IERB\n"
+        "    move.l  $44e.w,a0            ; clear the screen to palette 0\n"
+        "    move.w  #(32000/4)-1,d0\n"
+        "    moveq   #0,d1\n"
+        ".clr:\n"
+        "    move.l  d1,(a0)+\n"
+        "    dbf     d0,.clr\n"
+        "    move.l  #hbl,$68.w           ; HBL autovector -> the packed colour run\n"
+        "    move.l  #vbl,$70.w\n"
+        "main:\n"
+        "    stop    #$2100               ; IPL1: HBL wakes us with fixed latency\n"
+        "    bra.s   main\n"
+        "\n"
+        "hbl:\n"
+        "%1"
+        "    rte\n"
+        "\n"
+        "vbl:\n"
+        "    rte\n")
+        .arg(body);
+}
+
 }   // namespace RasterCodegen

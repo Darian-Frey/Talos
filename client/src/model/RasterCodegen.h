@@ -28,4 +28,11 @@ constexpr int kDefaultDelay = 900;   // VBL -> first visible line
 QString generate(QVector<Bar> bars, int pad = kDefaultPad, int delay = kDefaultDelay,
                  int total = kVisibleLines);
 
+// Intra-line "vertical bands" (Spectrum-512-lite): an HBL-synced handler that
+// packs one background-colour write per band, back to back, so each lands ~one
+// instruction apart down the scanline -> equal-width vertical bands, steady on
+// every line. Bounded by how many writes fit the visible line (~kMaxBands).
+constexpr int kMaxBands = 24;
+QString generateSplit(const QVector<quint16> &colours);
+
 }   // namespace RasterCodegen

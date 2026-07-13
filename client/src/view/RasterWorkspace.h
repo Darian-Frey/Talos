@@ -14,6 +14,7 @@
 
 class QTableWidget;
 class QLabel;
+class QComboBox;
 
 class RasterWorkspace : public QWidget
 {
@@ -21,7 +22,10 @@ class RasterWorkspace : public QWidget
 public:
     explicit RasterWorkspace(QWidget *parent = nullptr);
 
+    enum Mode { Bars = 0, Bands = 1 };       // horizontal raster bars / vertical intra-line bands
+    Mode mode() const;
     QVector<RasterCodegen::Bar> bars() const;
+    QVector<quint16> colours() const;        // colour column in row order (Bands mode)
     void setBusy(bool busy);                 // disable actions during build/verify
     void setResult(const QString &text, bool ok);
 
@@ -34,6 +38,7 @@ private:
     void addBar(int line, quint16 colour);
     void recolourRow(int row, int col);   // matches QTableWidget::cellChanged
 
+    QComboBox *m_mode = nullptr;    // Bars / Bands
     QTableWidget *m_table = nullptr;
     QLabel *m_result = nullptr;
     QWidget *m_actions = nullptr;   // the button row (disabled while busy)
