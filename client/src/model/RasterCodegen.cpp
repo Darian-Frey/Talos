@@ -73,15 +73,11 @@ QString generate(QVector<Bar> bars, int pad, int delay, int total)
         .arg(tab);
 }
 
-QString generateSplit(const QVector<quint16> &colours)
+// Wrap an HBL-handler body in the MFP-off, screen-cleared, HBL-synced prologue.
+static QString hblWrap(const QString &body)
 {
-    QString body;
-    for (int i = 0; i < colours.size() && i < kMaxBands; ++i)
-        body += QStringLiteral("    move.w  #$%1,PAL0\n")
-                    .arg(colours[i] & 0x777, 3, 16, QLatin1Char('0'));
-
     return QStringLiteral(
-        "; split.s — Talos Phase 4 generated intra-line bands (F-212). Do not hand-edit.\n"
+        "; split.s — Talos Phase 4 generated intra-line effect (F-212). Do not hand-edit.\n"
         "IERA    equ $fffffa07\n"
         "IERB    equ $fffffa09\n"
         "PAL0    equ $ffff8240\n"
@@ -99,7 +95,7 @@ QString generateSplit(const QVector<quint16> &colours)
         ".clr:\n"
         "    move.l  d1,(a0)+\n"
         "    dbf     d0,.clr\n"
-        "    move.l  #hbl,$68.w           ; HBL autovector -> the packed colour run\n"
+        "    move.l  #hbl,$68.w           ; HBL autovector -> the colour run\n"
         "    move.l  #vbl,$70.w\n"
         "main:\n"
         "    stop    #$2100               ; IPL1: HBL wakes us with fixed latency\n"
@@ -112,6 +108,36 @@ QString generateSplit(const QVector<quint16> &colours)
         "vbl:\n"
         "    rte\n")
         .arg(body);
+}
+
+QString generateSplit(const QVector<quint16> &colours)
+{
+    QString body;
+    for (int i = 0; i < colours.size() && i < kMaxBands; ++i)
+        body += QStringLiteral("    move.w  #$%1,PAL0\n")
+                    .arg(colours[i] & 0x777, 3, 16, QLatin1Char('0'));
+    return hblWrap(body);
+}
+
+QString generateColumns(QVector<Bar> bars)
+{
+    std::sort(bars.begin(), bars.end(),
+              [](const Bar &a, const Bar &b) { return a.line < b.line; });
+    if (bars.isEmpty())
+        return hblWrap(QString());
+
+    auto write = [](quint16 c) {
+        return QStringLiteral("    move.w  #$%1,PAL0\n").arg(c & 0x777, 3, 16, QLatin1Char('0'));
+    };
+    QString body = write(bars[0].colour);   // leftmost colour, from the left edge
+    double prev = kColBase;
+    for (int i = 1; i < bars.size() && i < kMaxBands; ++i) {
+        int L = qMax(0, qRound((bars[i].line - prev - kGapBase) / double(kPxPerDbf)));
+        body += QStringLiteral("    move.w  #%1,d0\n.b%2: dbf     d0,.b%2\n").arg(L).arg(i);
+        body += write(bars[i].colour);
+        prev = prev + kGapBase + kPxPerDbf * L;
+    }
+    return hblWrap(body);
 }
 
 }   // namespace RasterCodegen

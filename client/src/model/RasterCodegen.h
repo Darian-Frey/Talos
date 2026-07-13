@@ -35,4 +35,12 @@ QString generate(QVector<Bar> bars, int pad = kDefaultPad, int delay = kDefaultD
 constexpr int kMaxBands = 24;
 QString generateSplit(const QVector<quint16> &colours);
 
+// Arbitrary-column intra-line split: each Bar's `line` is a target framebuffer
+// column where its colour begins. HBL-synced, with a per-gap delay calibrated so
+// each write lands at its column (bench-validated, see harness/intraline_split.py).
+constexpr int kColBase = 78;      // first colour's start column (write at HBL)
+constexpr int kGapBase = 76;      // column advance per gap at zero delay
+constexpr int kPxPerDbf = 24;     // column advance per dbf iteration
+QString generateColumns(QVector<Bar> bars);
+
 }   // namespace RasterCodegen

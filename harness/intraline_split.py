@@ -153,6 +153,87 @@ def measure_bands(img, colours):
     return modal, float(np.median(arr.std(axis=0)))
 
 
+# Per-gap calibration for arbitrary-column placement (ST PAL, this fork build).
+# First colour lands at ~COLBASE (writeA at HBL); each further boundary advances
+# by GAPBASE (the move+dbf-once overhead) + PXPERDBF * L. Bench-validated (C-007).
+COLBASE, GAPBASE = 78, 76
+
+
+def codegen_cols(leftmost, boundaries):
+    """leftmost: colour from the left edge. boundaries: [(target_col, colour)] in
+    ascending column order; each inserts a calibrated delay so its write lands at
+    the target column."""
+    body = f"    move.w  #${leftmost:03x},PAL0\n"
+    prev = float(COLBASE)
+    for i, (tcol, colour) in enumerate(boundaries):
+        L = max(0, round((tcol - prev - GAPBASE) / PXPERDBF))
+        body += f"    move.w  #{L},d0\n.b{i}: dbf     d0,.b{i}\n"
+        body += f"    move.w  #${colour:03x},PAL0\n"
+        prev = prev + GAPBASE + PXPERDBF * L
+    return _wrap(body)
+
+
+def _wrap(hbl_body):
+    return f"""; cols.s — Talos intra-line arbitrary-column split (HBL-synced, generated).
+IERA    equ $fffffa07
+IERB    equ $fffffa09
+PAL0    equ $ffff8240
+    text
+start:
+    clr.l   -(sp)
+    move.w  #$20,-(sp)
+    trap    #1
+    addq.l  #6,sp
+    move.b  #0,IERA
+    move.b  #0,IERB
+    move.l  $44e.w,a0
+    move.w  #(32000/4)-1,d0
+    moveq   #0,d1
+.clr:
+    move.l  d1,(a0)+
+    dbf     d0,.clr
+    move.l  #hbl,$68.w
+    move.l  #vbl,$70.w
+main:
+    stop    #$2100
+    bra.s   main
+hbl:
+{hbl_body}    rte
+vbl:
+    rte
+"""
+
+
+def measure_boundaries(img, palette):
+    """Return, for the median-transition-count rows, the median column of each
+    boundary (ordered) and the positional stddev — verticality."""
+    from collections import Counter
+    pal = [np.array(st_rgb(c)) for c in palette]
+
+    def transitions(y):
+        row = img[y].astype(int)
+        cols, prev = [], None
+        for x in range(img.shape[1]):
+            d = [int(np.abs(row[x] - p).sum()) for p in pal]
+            m = min(range(len(pal)), key=lambda i: d[i])
+            v = m if d[m] < 120 else -1
+            if v < 0:
+                continue
+            if prev is not None and v != prev:
+                cols.append(x)
+            prev = v
+        return cols
+
+    rows = [t for t in (transitions(y) for y in range(0, img.shape[0], 3)) if t]
+    if not rows:
+        return [], None
+    modal = Counter(len(r) for r in rows).most_common(1)[0][0]
+    kept = np.array([r for r in rows if len(r) == modal])
+    if len(kept) < 10:
+        return [], None
+    return [int(c) for c in np.median(kept, axis=0)], float(np.median(kept.std(axis=0)))
+
+
 def assemble(asm, vasm, outdir):
     os.makedirs(os.path.join(outdir, "AUTO"), exist_ok=True)
     src = os.path.join(outdir, "split.s")
@@ -260,7 +341,30 @@ def main():
     ap.add_argument("--gap", type=int, default=0, help="dbf delay between bands (0 = packed)")
     ap.add_argument("--nbands", type=int, default=20, help="number of colour writes/line")
     ap.add_argument("--colours", help="comma-separated RGB list (overrides --nbands)")
+    ap.add_argument("--cols", help="arbitrary-column boundaries, e.g. 300,450,600")
     a = ap.parse_args()
+
+    if a.cols:
+        targets = [int(x) for x in a.cols.split(",")]
+        pal = [0x700, 0x070, 0x007, 0x770, 0x707, 0x077]
+        leftmost = pal[0]
+        boundaries = [(t, pal[(i + 1) % len(pal)]) for i, t in enumerate(targets)]
+        outdir = tempfile.mkdtemp(prefix="cols_")
+        assemble(codegen_cols(leftmost, boundaries), os.path.abspath(a.vasm), outdir)
+        png = os.path.join(tempfile.gettempdir(), "cols.png")
+        img = run_shot(a.hatari, a.tos, outdir, png)
+        palette = [leftmost] + [c for _, c in boundaries]
+        actual, vstd = measure_boundaries(img, palette)
+        # the first transition is the left-edge wrap (prev line's colour -> leftmost);
+        # the real boundaries follow.
+        matched = actual[1:] if len(actual) == len(targets) + 1 else actual
+        errs = [abs(matched[i] - targets[i]) for i in range(min(len(matched), len(targets)))]
+        print(f"  targets: {targets}")
+        print(f"  actual:  {matched}  vstd={vstd}  errs={errs}")
+        ok = (len(matched) == len(targets) and errs and max(errs) <= 30
+              and vstd is not None and vstd < 10)
+        print("RESULT:", "PASS — boundaries at target columns" if ok else "FAIL")
+        sys.exit(0 if ok else 1)
 
     if a.multi:
         if a.colours:

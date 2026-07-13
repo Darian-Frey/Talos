@@ -1,5 +1,6 @@
 #include "FramebufferView.h"
 
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
 
@@ -55,6 +56,19 @@ void FramebufferView::setImage(const QImage &image)
 {
     m_image = image;
     update();
+}
+
+void FramebufferView::mousePressEvent(QMouseEvent *event)
+{
+    const QRectF dst = frameRect();
+    if (m_image.isNull() || !dst.contains(event->position())) {
+        QWidget::mousePressEvent(event);
+        return;
+    }
+    // Widget point -> framebuffer image-pixel coordinates.
+    const double ix = (event->position().x() - dst.left()) / dst.width() * m_image.width();
+    const double iy = (event->position().y() - dst.top()) / dst.height() * m_image.height();
+    emit imageClicked(QPointF(ix, iy));
 }
 
 void FramebufferView::setBeam(const BeamMarker &marker)

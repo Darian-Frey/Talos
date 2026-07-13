@@ -224,6 +224,7 @@ void MainWindow::buildUi()
 
     m_fb = new FramebufferView(this);
     setCentralWidget(m_fb);
+    connect(m_fb, &FramebufferView::imageClicked, this, &MainWindow::onFramebufferClicked);
 
     m_regTable = new QTableWidget(0, 2, this);
     m_regTable->setHorizontalHeaderLabels({QStringLiteral("Reg"), QStringLiteral("Value")});
@@ -797,7 +798,8 @@ QString repoRootFrom(const QString &hatariBinary)
 void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
     const bool bands = m_raster->mode() == RasterWorkspace::Bands;
-    if ((bands && m_raster->colours().isEmpty()) || (!bands && bars.isEmpty())) {
+    const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
+    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
         m_raster->setResult(QStringLiteral("Add at least one %1 first.")
                                 .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
                             false);
@@ -821,7 +823,7 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         m_raster->setResult(QStringLiteral("could not write raster.s"), false);
         return;
     }
-    f.write((bands ? RasterCodegen::generateSplit(m_raster->colours())
+    f.write((bands ? RasterCodegen::generateColumns(colBars)
                    : RasterCodegen::generate(bars)).toUtf8());
     f.close();
 
@@ -861,10 +863,15 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
     const bool bands = m_raster->mode() == RasterWorkspace::Bands;
-    const QVector<quint16> cols = m_raster->colours();
-    if ((bands && cols.isEmpty()) || (!bands && bars.isEmpty())) {
+    const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
+    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
         m_raster->setResult(QStringLiteral("Add at least one %1 first.")
                                 .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
+                            false);
+        return;
+    }
+    if (bands && colBars.size() < 2) {
+        m_raster->setResult(QStringLiteral("Bands verify needs 2+ bands (to check boundaries)."),
                             false);
         return;
     }
@@ -882,10 +889,11 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
     QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
                      QStringLiteral("--tos"), m_config.hatari.tosImage};
     if (bands) {
-        QStringList hex;
-        for (quint16 c : cols)
-            hex << QStringLiteral("%1").arg(c, 0, 16);
-        args << QStringLiteral("--multi") << QStringLiteral("--colours") << hex.join(QLatin1Char(','));
+        // Boundary columns (the leftmost band fills from the edge, so skip it).
+        QStringList cols;
+        for (int i = 1; i < colBars.size(); ++i)
+            cols << QString::number(colBars[i].line);
+        args << QStringLiteral("--cols") << cols.join(QLatin1Char(','));
     } else {
         for (const auto &b : bars)
             args << QStringLiteral("--bar")
@@ -901,7 +909,7 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
                 const QString out = QString::fromUtf8(proc->readAllStandardOutput());
                 const bool ok = (code == 0) && out.contains(QStringLiteral("RESULT: PASS"));
                 m_raster->setResult(
-                    ok ? (bands ? QStringLiteral("Verified ✓ — stable vertical bands on every line")
+                    ok ? (bands ? QStringLiteral("Verified ✓ — band boundaries land at their columns")
                                 : QStringLiteral("Verified ✓ — authored bars reproduced in stock Hatari"))
                        : QStringLiteral("Verify FAILED — %1").arg(out.section('\n', -2).trimmed()),
                     ok);
@@ -913,8 +921,8 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
     const bool bands = m_raster->mode() == RasterWorkspace::Bands;
-    const QVector<quint16> cols = m_raster->colours();
-    if ((bands && cols.isEmpty()) || (!bands && bars.isEmpty())) {
+    const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
+    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
         m_raster->setResult(QStringLiteral("Add at least one %1 first.")
                                 .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
                             false);
@@ -931,19 +939,19 @@ void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         m_raster->setResult(QStringLiteral("could not write to %1").arg(dir), false);
         return;
     }
-    s.write((bands ? RasterCodegen::generateSplit(cols)
+    s.write((bands ? RasterCodegen::generateColumns(colBars)
                    : RasterCodegen::generate(bars)).toUtf8());
     s.close();
 
     // 2. The register sequence (portable data form): $ff8240 writes tagged with
-    //    machine/region — per scanline (bars) or in left->right band order (bands).
+    //    machine/region — per scanline (bars) or per column boundary (bands).
     QJsonArray writes;
     if (bands) {
-        int idx = 0;
-        for (quint16 c : cols)
+        for (const auto &b : colBars)
             writes.append(QJsonObject{
-                {QStringLiteral("band"), idx++},
-                {QStringLiteral("value"), QStringLiteral("%1").arg(c, 3, 16, QLatin1Char('0'))}});
+                {QStringLiteral("column"), b.line},
+                {QStringLiteral("value"),
+                 QStringLiteral("%1").arg(b.colour, 3, 16, QLatin1Char('0'))}});
     } else {
         QVector<RasterCodegen::Bar> sorted = bars;
         std::sort(sorted.begin(), sorted.end(),
@@ -986,6 +994,18 @@ void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 
     m_raster->setResult(
         QStringLiteral("Exported raster.s + raster.json%1 to %2").arg(prgNote, dir), true);
+}
+
+void MainWindow::onFramebufferClicked(const QPointF &imagePixel)
+{
+    // Only meaningful while authoring: turn the clicked pixel into a visible
+    // scanline (Bars) / framebuffer column (Bands) and hand it to the workspace.
+    if (m_fb->imageSize().isEmpty())
+        return;
+    const BeamGeometry geo(m_region, m_fb->imageSize());
+    const int line = geo.scanlineAtY(imagePixel.y()) - geo.firstVisibleHbl();
+    const int column = static_cast<int>(imagePixel.x());
+    m_raster->placeFromClick(line, column);
 }
 
 void MainWindow::onCaptureProgress(int count, int target)

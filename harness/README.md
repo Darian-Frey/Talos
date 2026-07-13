@@ -72,6 +72,10 @@ python3 harness/intraline_split.py --hatari <bin> --tos <rom> --multi     # Spec
 vertical bands per line, the way Spectrum 512 packs 44+ writes/line. Verified at
 20 bands (vstd ~6 px), bounded by how many writes fit the ~416-cycle visible line.
 
+`--cols 300,450,600` places boundaries at *arbitrary* target columns via a
+per-gap calibrated delay (`col ~= 78 + 76 + 24*L`), and checks each lands within
+tolerance. This is the calibration the client's Bands mode uses for click-to-place.
+
 ## How it works
 
 For each run it launches Hatari (fast-forward, headless, clean config) with the

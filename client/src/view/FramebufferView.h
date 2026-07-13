@@ -51,8 +51,14 @@ public:
     // space (no widget scaling). Used for headless verification and, later, export.
     QImage composite() const;
 
+signals:
+    // A click inside the displayed frame, in framebuffer image-pixel coordinates
+    // (for click-to-place authoring). Not emitted for clicks outside the frame.
+    void imageClicked(const QPointF &imagePixel);
+
 protected:
     void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
 
 private:
     QRectF frameRect() const;

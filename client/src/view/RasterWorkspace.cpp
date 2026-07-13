@@ -1,5 +1,7 @@
 #include "RasterWorkspace.h"
 
+#include <algorithm>
+
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -84,10 +86,11 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     connect(m_mode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
         const bool bands = mode() == Bands;
         m_table->setHorizontalHeaderLabels(
-            {bands ? QStringLiteral("(band #)") : QStringLiteral("Scanline"),
+            {bands ? QStringLiteral("Column (0–831)") : QStringLiteral("Scanline"),
              QStringLiteral("Colour $0rgb")});
-        setResult(bands ? QStringLiteral("Bands mode: row order = left→right vertical bands "
-                                         "(max %1).").arg(RasterCodegen::kMaxBands)
+        setResult(bands ? QStringLiteral("Bands mode: colour begins at its column; the "
+                                         "lowest-column colour fills from the left. Click the "
+                                         "frame to place bands (max %1).").arg(RasterCodegen::kMaxBands)
                         : QString(),
                   true);
     });
@@ -115,6 +118,26 @@ QVector<quint16> RasterWorkspace::colours() const
         if (ok)
             out.append(col);
     }
+    return out;
+}
+
+QVector<RasterCodegen::Bar> RasterWorkspace::columnBars() const
+{
+    // Bands mode: column-0 cell is a framebuffer column (0–831), not a scanline.
+    QVector<RasterCodegen::Bar> out;
+    for (int r = 0; r < m_table->rowCount(); ++r) {
+        QTableWidgetItem *l = m_table->item(r, 0);
+        QTableWidgetItem *c = m_table->item(r, 1);
+        if (!l || !c)
+            continue;
+        bool okL = false, okC = false;
+        const int column = l->text().trimmed().toInt(&okL);
+        const quint16 col = static_cast<quint16>(c->text().trimmed().toUInt(&okC, 16) & 0x777);
+        if (okL && okC && column >= 0 && column <= 831)
+            out.append({column, col});
+    }
+    std::sort(out.begin(), out.end(),
+              [](const auto &a, const auto &b) { return a.line < b.line; });
     return out;
 }
 
@@ -159,6 +182,20 @@ QVector<RasterCodegen::Bar> RasterWorkspace::bars() const
             out.append({line, col});
     }
     return out;
+}
+
+void RasterWorkspace::placeFromClick(int line, int column)
+{
+    // Cycle a default colour so successive clicks are visually distinct.
+    static const quint16 pal[] = {0x700, 0x070, 0x007, 0x770, 0x707, 0x077, 0x777};
+    const quint16 c = pal[m_table->rowCount() % 7];
+    if (mode() == Bars) {
+        addBar(qBound(0, line, RasterCodegen::kVisibleLines - 1), c);
+    } else {
+        // Bands: place a colour boundary at the clicked column (arbitrary-column
+        // codegen). Column is stored in the Scanline cell as the target.
+        addBar(qBound(0, column, 831), c);
+    }
 }
 
 void RasterWorkspace::setBusy(bool busy)

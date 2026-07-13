@@ -41,6 +41,16 @@ public:
     // Convenience: the pixel when the beam is fully on-frame, else nullopt.
     std::optional<QPointF> toPixel(int scanline, int cycleInLine) const;
 
+    // Inverse (for click-to-place authoring): an image pixel -> approximate
+    // absolute scanline / cycle-in-line. Not sub-cycle exact — for authoring.
+    int scanlineAtY(double imageY) const {
+        return static_cast<int>(imageY / m_zoomY) + m_firstVisibleHbl;
+    }
+    int cycleAtX(double imageX) const {
+        return static_cast<int>(imageX / m_zoomX) + m_firstVisibleCycle;
+    }
+    int firstVisibleHbl() const { return m_firstVisibleHbl; }
+
     VideoRegion region() const { return m_region; }
     int cyclesPerLine() const { return m_cyclesPerLine; }
     int scanlinesPerFrame() const { return m_scanlinesPerFrame; }

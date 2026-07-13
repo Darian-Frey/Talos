@@ -67,3 +67,10 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-multisplit/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-multisplit/AUTO/MULTI.PRG" \
   "${REPO_ROOT}/tests/effects/multisplit.s"
 echo ">> built tests/effects/disk-multisplit/AUTO/MULTI.PRG"
+
+# scroller: STE hardware smooth scroll (F-211 third example). Needs STE/Mega STE.
+mkdir -p "${REPO_ROOT}/tests/effects/disk-scroller/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-scroller/AUTO/SCROLL.PRG" \
+  "${REPO_ROOT}/tests/effects/scroller.s"
+echo ">> built tests/effects/disk-scroller/AUTO/SCROLL.PRG"

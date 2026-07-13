@@ -26,6 +26,10 @@ public:
     Mode mode() const;
     QVector<RasterCodegen::Bar> bars() const;
     QVector<quint16> colours() const;        // colour column in row order (Bands mode)
+    QVector<RasterCodegen::Bar> columnBars() const;   // (column, colour) sorted (Bands mode)
+    // Click-to-place from the framebuffer: `line` is a visible scanline index
+    // (Bars), `column` is a framebuffer image column (Bands).
+    void placeFromClick(int line, int column);
     void setBusy(bool busy);                 // disable actions during build/verify
     void setResult(const QString &text, bool ok);
 
