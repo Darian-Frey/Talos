@@ -53,6 +53,20 @@ python3 harness/raster_roundtrip.py --hatari <bin> --tos <rom> \
     --bar 20:700 --bar 90:070 --bar 160:007   # (LINE:RGB; default = 7-bar rainbow)
 ```
 
+## Intra-line split (Phase 4, the Spectrum-512 direction)
+
+`intraline_split.py` proves cycle-*within-line* placement — harder than per-line
+bars. It codegens an **HBL-synced** vertical split (colour A, tuned delay, colour
+B, re-synced each scanline by the HBL interrupt so it doesn't drift), runs it, and
+checks the split is vertical (low column variance) and lands where asked. `--sweep`
+maps the HBL delay to the split column — the bench-validated calibration (C-007)
+the effect codegen uses.
+
+```bash
+python3 harness/intraline_split.py --hatari <bin> --tos <rom> --col 416   # target a column
+python3 harness/intraline_split.py --hatari <bin> --tos <rom> --sweep     # recalibrate
+```
+
 ## How it works
 
 For each run it launches Hatari (fast-forward, headless, clean config) with the

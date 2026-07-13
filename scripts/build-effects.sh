@@ -53,3 +53,10 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-megaspeed/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-megaspeed/AUTO/MSPEED.PRG" \
   "${REPO_ROOT}/tests/effects/megaspeed.s"
 echo ">> built tests/effects/disk-megaspeed/AUTO/MSPEED.PRG"
+
+# split: HBL-synced intra-line vertical raster split (Phase 4 intra-line pilot).
+mkdir -p "${REPO_ROOT}/tests/effects/disk-split/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-split/AUTO/SPLIT.PRG" \
+  "${REPO_ROOT}/tests/effects/split.s"
+echo ">> built tests/effects/disk-split/AUTO/SPLIT.PRG"

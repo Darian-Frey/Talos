@@ -14,6 +14,12 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `split.s` — **HBL-synced intra-line raster split** (Phase 4, intra-line pilot):
+  changes the background colour *mid-scanline* at a precise beam position, re-synced
+  every line by the HBL interrupt (from `stop`, so low jitter) to avoid the drift a
+  free-running loop suffers. A clean vertical blue/red split — the Spectrum-512
+  direction. Built to `disk-split/AUTO/SPLIT.PRG`; calibrate with
+  `harness/intraline_split.py`.
 - `megaspeed.s` — **Mega STE dual-speed demonstrator** (Phase 3, F-210): a
   VBL-locked colour hammer whose horizontal band density tracks the CPU clock —
   ~2× as many bands at 16 MHz as at 8 MHz (same beam, twice the per-scanline
