@@ -14,6 +14,10 @@ with vasm (`scripts/bootstrap-vasm.sh`, then `scripts/build-effects.sh`).
 - `rasterbars.s` — writes the background-colour register `$ffff8240` across the
   frame (rolling colour bands + writes spread over the beam). Built to
   `disk/AUTO/RBARS.PRG`.
+- `multisplit.s` — **HBL-synced multi-split** (Phase 4, Spectrum-512-lite): the
+  HBL handler writes a run of background colours back-to-back (packed), giving 20
+  narrow vertical bands per line — the way Spectrum 512 packs 44+ writes/line.
+  Built to `disk-multisplit/AUTO/MULTI.PRG`.
 - `split.s` — **HBL-synced intra-line raster split** (Phase 4, intra-line pilot):
   changes the background colour *mid-scanline* at a precise beam position, re-synced
   every line by the HBL interrupt (from `stop`, so low jitter) to avoid the drift a

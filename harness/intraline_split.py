@@ -76,6 +76,83 @@ vbl:
 """
 
 
+RAINBOW = [0x700, 0x070, 0x007, 0x770, 0x707, 0x077, 0x777, 0x330]
+
+
+def codegen_multi(colours, left, nlines=NLINES):
+    """Spectrum-512-lite: the HBL handler writes each colour in turn -> N vertical
+    bands per scanline, HBL-synced so all stable. left>0 inserts a dbf delay between
+    writes (few wide bands); left<=0 packs the writes back-to-back (many narrow
+    bands, as real Spectrum 512 does — ~44+ changes/line for 512 on-screen colours).
+    The whole handler must fit inside one scanline or the HBL sync breaks."""
+    body = ""
+    for i, c in enumerate(colours):
+        body += f"    move.w  #${c:03x},PAL0\n"
+        if i < len(colours) - 1 and left > 0:
+            body += f"    move.w  #{left},d0\n.l{i}: dbf     d0,.l{i}\n"
+    return f"""; multisplit.s — Talos intra-line multi-split (HBL-synced, generated).
+IERA    equ $fffffa07
+IERB    equ $fffffa09
+PAL0    equ $ffff8240
+    text
+start:
+    clr.l   -(sp)
+    move.w  #$20,-(sp)
+    trap    #1
+    addq.l  #6,sp
+    move.b  #0,IERA
+    move.b  #0,IERB
+    move.l  $44e.w,a0
+    move.w  #(32000/4)-1,d0
+    moveq   #0,d1
+.clr:
+    move.l  d1,(a0)+
+    dbf     d0,.clr
+    move.l  #hbl,$68.w
+    move.l  #vbl,$70.w
+main:
+    stop    #$2100
+    bra.s   main
+hbl:
+{body}    rte
+vbl:
+    rte
+"""
+
+
+def measure_bands(img, colours):
+    """Count the colour bands per line and how vertical they are. The palette
+    cycles, so verticality is measured *positionally*: for rows with the modal
+    number of colour changes, the stddev of the k-th change's column. Returns
+    (modal_band_count, median_positional_stddev)."""
+    from collections import Counter
+    pal = [np.array(st_rgb(c)) for c in dict.fromkeys(colours)]   # distinct colours
+
+    def transitions(y):
+        row = img[y].astype(int)
+        cols, prev = [], None
+        for x in range(img.shape[1]):
+            d = [int(np.abs(row[x] - p).sum()) for p in pal]
+            m = min(range(len(pal)), key=lambda i: d[i])
+            v = m if d[m] < 120 else -1
+            if v < 0:
+                continue        # border / unclassified
+            if prev is not None and v != prev:
+                cols.append(x)
+            prev = v
+        return cols
+
+    rows = [t for t in (transitions(y) for y in range(0, img.shape[0], 3)) if t]
+    if not rows:
+        return 0, None
+    modal = Counter(len(r) for r in rows).most_common(1)[0][0]
+    kept = [r for r in rows if len(r) == modal]
+    if len(kept) < 10:
+        return modal, None
+    arr = np.array(kept)
+    return modal, float(np.median(arr.std(axis=0)))
+
+
 def assemble(asm, vasm, outdir):
     os.makedirs(os.path.join(outdir, "AUTO"), exist_ok=True)
     src = os.path.join(outdir, "split.s")
@@ -179,7 +256,23 @@ def main():
     ap.add_argument("--k", type=int, default=45)
     ap.add_argument("--delay", type=int, default=900)
     ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--multi", action="store_true", help="Spectrum-lite: N bands/line")
+    ap.add_argument("--gap", type=int, default=0, help="dbf delay between bands (0 = packed)")
+    ap.add_argument("--nbands", type=int, default=20, help="number of colour writes/line")
     a = ap.parse_args()
+
+    if a.multi:
+        colours = [RAINBOW[i % len(RAINBOW)] for i in range(a.nbands)]
+        outdir = tempfile.mkdtemp(prefix="multi_")
+        assemble(codegen_multi(colours, a.gap), os.path.abspath(a.vasm), outdir)
+        png = os.path.join(tempfile.gettempdir(), "multisplit.png")
+        img = run_shot(a.hatari, a.tos, outdir, png)
+        nb, vstd = measure_bands(img, colours)
+        print(f"  {a.nbands} writes, gap={a.gap}: centre-row bands seen={nb}  vstd={vstd}")
+        print(f"  screenshot: {png}")
+        ok = nb >= len(RAINBOW) and vstd is not None and vstd < 12
+        print("RESULT:", "PASS — multiple stable vertical bands per line" if ok else "FAIL")
+        sys.exit(0 if ok else 1)
 
     if a.sweep:
         print(f"  sweep (k={a.k}, delay={a.delay}): left-dbf -> split column / verticality")

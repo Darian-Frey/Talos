@@ -60,3 +60,10 @@ mkdir -p "${REPO_ROOT}/tests/effects/disk-split/AUTO"
   -o "${REPO_ROOT}/tests/effects/disk-split/AUTO/SPLIT.PRG" \
   "${REPO_ROOT}/tests/effects/split.s"
 echo ">> built tests/effects/disk-split/AUTO/SPLIT.PRG"
+
+# multisplit: HBL-synced packed multi-split (Spectrum-512-lite), 20 bands/line.
+mkdir -p "${REPO_ROOT}/tests/effects/disk-multisplit/AUTO"
+"${VASM}" -Ftos \
+  -o "${REPO_ROOT}/tests/effects/disk-multisplit/AUTO/MULTI.PRG" \
+  "${REPO_ROOT}/tests/effects/multisplit.s"
+echo ">> built tests/effects/disk-multisplit/AUTO/MULTI.PRG"

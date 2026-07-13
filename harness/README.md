@@ -65,7 +65,12 @@ the effect codegen uses.
 ```bash
 python3 harness/intraline_split.py --hatari <bin> --tos <rom> --col 416   # target a column
 python3 harness/intraline_split.py --hatari <bin> --tos <rom> --sweep     # recalibrate
+python3 harness/intraline_split.py --hatari <bin> --tos <rom> --multi     # Spectrum-512-lite
 ```
+
+`--multi` packs N colour writes into the HBL handler (no delay) -> N stable
+vertical bands per line, the way Spectrum 512 packs 44+ writes/line. Verified at
+20 bands (vstd ~6 px), bounded by how many writes fit the ~416-cycle visible line.
 
 ## How it works
 
