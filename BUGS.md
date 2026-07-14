@@ -78,10 +78,16 @@ but nothing renders on a physical display in automation. Interactive checks are
 manual. Acceptable for now; revisit if a display-level regression slips through.
 
 **BUG-007 — Effect boot is slow (~10–14 s) with no skip.**
-Status: Open · Severity: Low · Area: session, tests/effects
+Status: Fixed · Severity: Low · Area: session, tests/effects
 EmuTOS shows a welcome screen and only runs `AUTO` programs ~10–14 s into boot.
 The launcher waits blindly. Could skip the welcome screen or fast-forward boot,
 and detect "effect running" (PC in the program) rather than sleeping.
+Fixed (2026-07-14): effect launches now boot with `--fast-forward on`, and the
+client turns it off (`ffwd 0`) once it detects the effect running — PC stable in
+a small RAM window (the TPA loop) for several polls, which boot code (running from
+ROM $E00000+) never does; a ~6 s safety timeout falls back to normal speed if
+detection misses. Measured: the effect is reached in ~0.6 s wall vs ~5.8 s
+(fast-forward ~2000 VBL/s vs ~50), and detection returns it to normal speed.
 
 **BUG-008 — Mega STE dual-speed is a flat toggle; per-access bimodality is not visualisable.**
 Status: Won't-fix (by design) · Severity: Low · Area: view (planned F-210), docs

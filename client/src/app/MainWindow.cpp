@@ -343,6 +343,9 @@ void MainWindow::onStartClicked()
         m_config.hatari.cpuClock =
             Machines::info(m_machine).dualSpeed ? m_clockCombo->currentData().toInt() : 0;
         m_config.hatari.country = Languages::country(m_language, m_region);
+        // Fast-forward the ~14 s boot when running an AUTO effect; turned off once
+        // the effect is detected running (BUG-007).
+        m_config.hatari.bootFastForward = !m_config.hatari.gemdosDir.isEmpty();
         if (!m_launcher->launch(m_config.hatari))
             return;
         statusBar()->showMessage(
@@ -350,6 +353,9 @@ void MainWindow::onStartClicked()
                 .arg(Machines::info(m_machine).name,
                      Languages::info(m_language).name, regionName(m_region)));
     }
+    m_bootWatching = !m_config.attachOnly && m_config.hatari.bootFastForward;
+    m_bootRamHits = m_bootPolls = 0;
+    m_bootLastPc = 0;
     m_connLabel->setText(QStringLiteral("connecting…"));
     m_rdb->connectToHatari(m_config.host, m_config.hatari.remotePort);
     updateLaunchStopState();
@@ -560,8 +566,41 @@ void MainWindow::refreshRegs()
         m_state = MachineState::fromRegsReply(tokens);
         updateRegisterPanel();
         updateStatusBar();
+        checkBootFastForward();
         refreshScreen();
     });
+}
+
+void MainWindow::checkBootFastForward()
+{
+    if (!m_bootWatching)
+        return;
+    const auto pc = m_state.pc();
+    // The AUTO effect runs from the TPA (low RAM) and loops tightly; EmuTOS boots
+    // from ROM ($E00000+). Detect the effect by PC staying inside a small window in
+    // RAM across a few polls (a tight loop / a `stop`), which boot code never does.
+    const bool inRam = pc && *pc >= 0x2000 && *pc < 0x400000;
+    const bool stable = inRam && m_bootLastPc
+                        && qAbs(qint64(*pc) - qint64(m_bootLastPc)) < 0x200;
+    if (stable) {
+        if (++m_bootRamHits >= 5) {
+            endBootFastForward(QStringLiteral("effect running"));
+            return;
+        }
+    } else {
+        m_bootRamHits = 0;
+    }
+    if (inRam)
+        m_bootLastPc = *pc;
+    if (++m_bootPolls > 120)   // safety: ~6 s of watching, then run at normal speed
+        endBootFastForward(QStringLiteral("timeout"));
+}
+
+void MainWindow::endBootFastForward(const QString &why)
+{
+    m_bootWatching = false;
+    m_rdb->sendCommand("ffwd 0");
+    statusBar()->showMessage(QStringLiteral("Boot fast-forward off (%1).").arg(why), 3000);
 }
 
 void MainWindow::refreshScreen()

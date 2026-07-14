@@ -23,6 +23,8 @@ public:
         QString machine = "st";       // st | ste | megast | megaste | tt | falcon
         int cpuClock = 0;             // 0 = default; 8/16 -> --cpuclock (Mega STE dual-speed, F-210)
         bool monoMonitor = false;     // --monitor mono -> high-res 640x400 (BUG-003 geometry)
+        bool bootFastForward = false; // launch with --fast-forward on; the client turns it off
+                                      // once the effect is running (BUG-007 faster boot)
         QString country;              // EmuTOS country -> PAL/NTSC (us=NTSC, de=PAL)
         bool headless = false;        // run with dummy SDL video/audio (no window)
         bool hideStatusBar = true;    // hide Hatari's own status-bar overlay

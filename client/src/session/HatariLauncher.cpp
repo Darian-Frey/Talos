@@ -60,6 +60,8 @@ bool HatariLauncher::launch(const Config &cfg)
         args << "--cpuclock" << QString::number(cfg.cpuClock);   // Mega STE 8/16 MHz (F-210)
     if (cfg.monoMonitor)
         args << "--monitor" << "mono";   // high-res 640x400 (BUG-003)
+    if (cfg.bootFastForward)
+        args << "--fast-forward" << "on";   // fast boot; client turns it off (BUG-007)
     if (!cfg.country.isEmpty())
         args << "--country" << cfg.country;   // selects PAL/NTSC via the TOS
     if (cfg.hideStatusBar)

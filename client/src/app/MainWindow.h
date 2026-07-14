@@ -102,6 +102,8 @@ private:
     void refreshRegs();
     void refreshPalette();
     void readRegionFromCore();   // BUG-002: read the actual region from $ff820a
+    void checkBootFastForward(); // BUG-007: turn off boot fast-forward once the effect runs
+    void endBootFastForward(const QString &why);
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
     void recomputeWriteMarks(QSize frameSize);
     void populateTimeline();
@@ -151,6 +153,10 @@ private:
     QLabel *m_captureLabel = nullptr;   // persistent last-capture result
 
     int m_refreshTick = 0;      // paces the rarely-changing reads (palette/region)
+    bool m_bootWatching = false;   // fast-forwarding boot, watching for the effect (BUG-007)
+    int m_bootRamHits = 0;         // consecutive polls with PC stable in the effect's loop
+    int m_bootPolls = 0;           // total watch polls (safety timeout)
+    quint32 m_bootLastPc = 0;
     MachineState m_state;       // latest parsed regs/counters snapshot
     MachineType m_machine = MachineType::ST;      // selected machine
     VideoRegion m_region = VideoRegion::Pal50;    // selected region
