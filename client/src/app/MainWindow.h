@@ -23,6 +23,7 @@ class PaletteView;
 class BlitterTrafficView;
 class DmaSoundView;
 class RasterWorkspace;
+class LedToolButton;
 class CaptureController;
 class QProcess;
 class QImage;
@@ -46,6 +47,7 @@ public:
         MachineType machine = MachineType::ST;      // initial machine
         VideoRegion region = VideoRegion::Pal50;    // initial region
         Language language = Language::English;       // initial language
+        bool fastBoot = true;                        // fast-forward the effect boot (BUG-007)
     };
 
     explicit MainWindow(Config config, QWidget *parent = nullptr);
@@ -66,6 +68,8 @@ signals:
 private slots:
     void onStartClicked();      // launch (or attach) + connect
     void doStop();              // terminate/disconnect the running machine
+    void saveState();           // F-217: snapshot the whole machine to a file
+    void loadState();           // F-217: relaunch restoring a saved snapshot
     void onMachineChanged(int index);
     void onRegionChanged(int index);
     void onLanguageChanged(int index);
@@ -132,6 +136,9 @@ private:
 
     QAction *m_actStart = nullptr;
     QAction *m_actStop = nullptr;
+    QAction *m_actSaveState = nullptr;
+    QAction *m_actLoadState = nullptr;
+    LedToolButton *m_fastBootBtn = nullptr;   // checkable + retro LED: fast-forward the boot
     QAction *m_actBreak = nullptr;
     QAction *m_actRun = nullptr;
     QAction *m_actStep = nullptr;

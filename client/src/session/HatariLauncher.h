@@ -25,6 +25,7 @@ public:
         bool monoMonitor = false;     // --monitor mono -> high-res 640x400 (BUG-003 geometry)
         bool bootFastForward = false; // launch with --fast-forward on; the client turns it off
                                       // once the effect is running (BUG-007 faster boot)
+        QString memStateFile;         // --memstate <file>: restore a saved state at launch (F-217)
         QString country;              // EmuTOS country -> PAL/NTSC (us=NTSC, de=PAL)
         bool headless = false;        // run with dummy SDL video/audio (no window)
         bool hideStatusBar = true;    // hide Hatari's own status-bar overlay

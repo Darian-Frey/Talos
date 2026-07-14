@@ -63,6 +63,8 @@ int main(int argc, char *argv[])
                                          "Run Hatari off-screen (no Hatari window).");
     const QCommandLineOption optMono("mono",
                                      "Use a monochrome monitor (high-res 640x400).");
+    const QCommandLineOption optNoFastBoot(
+        "no-fast-boot", "Boot the effect at real speed (don't fast-forward the boot).");
     const QCommandLineOption optAttach(
         "attach", "Attach to an already-running Hatari instead of launching one.");
     const QCommandLineOption optHost("host", "Remote host to connect to.", "host",
@@ -84,8 +86,8 @@ int main(int argc, char *argv[])
     const QCommandLineOption optCaptureReg(
         "capture-reg", "Register (hex) for --selftest-capture.", "hex", "ffff8240");
     parser.addOptions({optHatari, optTos, optMachine, optRegion, optLanguage, optHeadless,
-                       optMono, optAttach, optHost, optEffect, optSelftest, optSelftestCapture,
-                       optCaptureReg});
+                       optMono, optNoFastBoot, optAttach, optHost, optEffect, optSelftest,
+                       optSelftestCapture, optCaptureReg});
     parser.process(app);
 
     MainWindow::Config cfg;
@@ -95,6 +97,7 @@ int main(int argc, char *argv[])
     cfg.hatari.tosImage = parser.value(optTos);
     cfg.hatari.headless = parser.isSet(optHeadless);
     cfg.hatari.monoMonitor = parser.isSet(optMono);
+    cfg.fastBoot = !parser.isSet(optNoFastBoot);
     // Seed the initial machine/region from the CLI (the GUI combos take over).
     for (MachineType t : Machines::all()) {
         if (Machines::info(t).hatariMachine == parser.value(optMachine)) {

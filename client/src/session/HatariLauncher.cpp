@@ -62,6 +62,8 @@ bool HatariLauncher::launch(const Config &cfg)
         args << "--monitor" << "mono";   // high-res 640x400 (BUG-003)
     if (cfg.bootFastForward)
         args << "--fast-forward" << "on";   // fast boot; client turns it off (BUG-007)
+    if (!cfg.memStateFile.isEmpty())
+        args << "--memstate" << cfg.memStateFile;   // restore a saved state (F-217)
     if (!cfg.country.isEmpty())
         args << "--country" << cfg.country;   // selects PAL/NTSC via the TOS
     if (cfg.hideStatusBar)

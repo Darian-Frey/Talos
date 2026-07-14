@@ -48,3 +48,6 @@ __pycache__/
 /tests/effects/raster.s
 /tests/effects/raster.json
 /tests/effects/RASTER.PRG
+
+# Saved machine-state snapshots (F-217 Save state output), not source
+*.sav

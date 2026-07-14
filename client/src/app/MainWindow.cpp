@@ -9,6 +9,7 @@
 #include "view/BlitterTrafficView.h"
 #include "view/DmaSoundView.h"
 #include "view/RasterWorkspace.h"
+#include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
 
 #include <QDir>
@@ -143,6 +144,24 @@ void MainWindow::buildUi()
     m_actStop->setToolTip(QStringLiteral("Stop the running machine"));
     m_actStop->setEnabled(false);
     connect(m_actStop, &QAction::triggered, this, &MainWindow::doStop);
+
+    m_actSaveState = tb->addAction(QStringLiteral("Save state"));
+    m_actSaveState->setToolTip(QStringLiteral(
+        "F-217: snapshot the whole machine to a file (park a prototype / seed a run)"));
+    m_actSaveState->setEnabled(false);
+    connect(m_actSaveState, &QAction::triggered, this, &MainWindow::saveState);
+    m_actLoadState = tb->addAction(QStringLiteral("Load state"));
+    m_actLoadState->setToolTip(
+        QStringLiteral("F-217: relaunch restoring a saved snapshot (skips boot)"));
+    connect(m_actLoadState, &QAction::triggered, this, &MainWindow::loadState);
+
+    m_fastBootBtn = new LedToolButton(this);
+    m_fastBootBtn->setText(QStringLiteral("Fast boot"));
+    m_fastBootBtn->setChecked(m_config.fastBoot);
+    m_fastBootBtn->setToolTip(QStringLiteral(
+        "Fast-forward an effect's ~14 s boot, then run at normal speed (BUG-007). "
+        "The LED lights red while fast boot is on; uncheck to watch the boot at real speed."));
+    tb->addWidget(m_fastBootBtn);
     tb->addSeparator();
 
     m_actBreak = tb->addAction(QStringLiteral("Break"));
@@ -344,14 +363,19 @@ void MainWindow::onStartClicked()
             Machines::info(m_machine).dualSpeed ? m_clockCombo->currentData().toInt() : 0;
         m_config.hatari.country = Languages::country(m_language, m_region);
         // Fast-forward the ~14 s boot when running an AUTO effect; turned off once
-        // the effect is detected running (BUG-007).
-        m_config.hatari.bootFastForward = !m_config.hatari.gemdosDir.isEmpty();
+        // the effect is detected running (BUG-007). No boot to skip when restoring
+        // a snapshot (F-217) — the state is loaded at launch.
+        const bool restoring = !m_config.hatari.memStateFile.isEmpty();
+        m_config.hatari.bootFastForward = m_fastBootBtn->isChecked()
+                                          && !restoring && !m_config.hatari.gemdosDir.isEmpty();
         if (!m_launcher->launch(m_config.hatari))
             return;
+        m_config.hatari.memStateFile.clear();   // one-shot restore
         statusBar()->showMessage(
-            QStringLiteral("Launching %1 · %2 · %3…")
-                .arg(Machines::info(m_machine).name,
-                     Languages::info(m_language).name, regionName(m_region)));
+            restoring ? QStringLiteral("Restoring saved state…")
+                      : QStringLiteral("Launching %1 · %2 · %3…")
+                            .arg(Machines::info(m_machine).name,
+                                 Languages::info(m_language).name, regionName(m_region)));
     }
     m_bootWatching = !m_config.attachOnly && m_config.hatari.bootFastForward;
     m_bootRamHits = m_bootPolls = 0;
@@ -374,6 +398,47 @@ void MainWindow::doStop()
     setRunningControlsEnabled(false);
     m_connLabel->setText(QStringLiteral("stopped"));
     updateLaunchStopState();
+}
+
+void MainWindow::saveState()
+{
+    if (!m_rdb->isConnected())
+        return;
+    const QString file = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Save machine state"), QStringLiteral("talos.sav"),
+        QStringLiteral("Machine state (*.sav)"));
+    if (file.isEmpty())
+        return;
+    // Whole-system snapshot via the debugui (B1). Works while running or stopped.
+    m_rdb->sendCommand("console statesave " + file.toLocal8Bit(),
+                       [this, file](const RdbClient::Tokens &r) {
+                           const bool ok = !r.isEmpty() && r.first() == "OK";
+                           statusBar()->showMessage(
+                               ok ? QStringLiteral("Machine state saved to %1").arg(file)
+                                  : QStringLiteral("Save state failed"),
+                               4000);
+                       });
+}
+
+void MainWindow::loadState()
+{
+    const QString file = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Restore machine state"), QString(),
+        QStringLiteral("Machine state (*.sav)"));
+    if (file.isEmpty())
+        return;
+    if (m_config.attachOnly) {
+        statusBar()->showMessage(
+            QStringLiteral("Can't restore a snapshot into an attached Hatari."), 5000);
+        return;
+    }
+    // Restore by relaunching with --memstate (the in-place stateload is deferred
+    // and unreliable; a relaunch cleanly reloads the whole state, skipping boot).
+    m_config.hatari.memStateFile = file;
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+    else
+        onStartClicked();
 }
 
 void MainWindow::onMachineChanged(int index)
@@ -1166,6 +1231,7 @@ void MainWindow::setControlsEnabledForCapture(bool capturing)
     m_actCapture->setEnabled(en);
     m_actBlitCapture->setEnabled(en);
     m_actDmaCapture->setEnabled(en);
+    m_actSaveState->setEnabled(en);
     m_regEdit->setEnabled(en);
     m_countSpin->setEnabled(en);
 }
@@ -1182,6 +1248,7 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_actCapture->setEnabled(connected);
     m_actBlitCapture->setEnabled(connected);
     m_actDmaCapture->setEnabled(connected);
+    m_actSaveState->setEnabled(connected);   // F-217: snapshot needs a live machine
     m_regEdit->setEnabled(connected);
     m_countSpin->setEnabled(connected);
 }
