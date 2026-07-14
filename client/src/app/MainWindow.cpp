@@ -506,6 +506,30 @@ void MainWindow::refresh()
     // snapshot that matches the frame we then grab.
     refreshRegs();
     refreshPalette();
+    readRegionFromCore();
+}
+
+void MainWindow::readRegionFromCore()
+{
+    // BUG-002 follow-up: rather than assume the selected region, read the sync-mode
+    // register $ff820a and follow it — bit 1 = 1 -> 50 Hz (PAL), 0 -> 60 Hz (NTSC).
+    // (A sync-mode border trick could flip this transiently; the common case is the
+    // stable boot region, and reading it keeps the overlay geometry honest.)
+    m_rdb->sendCommand("mem ff820a 1", [this](const RdbClient::Tokens &r) {
+        if (r.size() < 4 || r.first() != "OK")
+            return;
+        const QByteArray b = MemCodec::decode(r.last(), 1);
+        if (b.isEmpty())
+            return;
+        const VideoRegion actual = (static_cast<quint8>(b[0]) & 0x02)
+                                       ? VideoRegion::Pal50 : VideoRegion::Ntsc60;
+        if (actual == m_region)
+            return;
+        m_region = actual;   // geometry (all BeamGeometry(m_region, ...)) now follows reality
+        const QSignalBlocker blocker(m_regionCombo);   // reflect it without a relaunch
+        m_regionCombo->setCurrentIndex(m_region == VideoRegion::Ntsc60 ? 1 : 0);
+        updateCapabilities();
+    });
 }
 
 void MainWindow::refreshPalette()

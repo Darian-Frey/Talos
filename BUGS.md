@@ -34,8 +34,10 @@ selects them, and region is not read from Hatari. Resolve in Phase 2 (machine/
 region selection); prefer reading the region from the core over assuming it.
 Fixed: Phase 2 adds a region selector (PAL/NTSC) that drives both `BeamGeometry`
 and the Hatari boot frequency (via `--country` on the multi-language EmuTOS).
-Follow-up: still *set* rather than *read from the core* — verify against `$ff820a`
-when convenient.
+Follow-up (done 2026-07-14): the region is now also *read from the core* —
+`refresh()` reads the sync-mode register `$ff820a` (bit 1 = 50/60 Hz;
+bench-validated uk→`0xfe`→PAL, us→`0xfc`→NTSC) and the overlay geometry + region
+combo follow it, so the UI reflects what actually booted rather than the guess.
 
 **BUG-003 — Beam geometry assumes ST low resolution.**
 Status: Fixed · Severity: Medium · Area: view/BeamGeometry

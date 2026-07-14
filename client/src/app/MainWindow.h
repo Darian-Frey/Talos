@@ -101,6 +101,7 @@ private:
     void refreshScreen();
     void refreshRegs();
     void refreshPalette();
+    void readRegionFromCore();   // BUG-002: read the actual region from $ff820a
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
     void recomputeWriteMarks(QSize frameSize);
     void populateTimeline();
