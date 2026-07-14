@@ -22,6 +22,7 @@ public:
         QString tosImage;             // path to TOS/EmuTOS ROM (C-009, user-supplied)
         QString machine = "st";       // st | ste | megast | megaste | tt | falcon
         int cpuClock = 0;             // 0 = default; 8/16 -> --cpuclock (Mega STE dual-speed, F-210)
+        bool monoMonitor = false;     // --monitor mono -> high-res 640x400 (BUG-003 geometry)
         QString country;              // EmuTOS country -> PAL/NTSC (us=NTSC, de=PAL)
         bool headless = false;        // run with dummy SDL video/audio (no window)
         bool hideStatusBar = true;    // hide Hatari's own status-bar overlay

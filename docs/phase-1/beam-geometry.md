@@ -1,8 +1,8 @@
 # Phase 1 — Beam ↔ framebuffer geometry
 
 > **Status:** Active
-> **Provenance:** Claude (implementer), sourced from the Hatari fork (tattlemuss/hatari @ 9832e006) and verified 2026-07-10 — unit-tested against the cited reference points.
-> **Why this status:** The PAL/NTSC low-res mapping is confirmed against source and unit-tested. Med/high resolution, STE fine-scroll and border-removal width changes are noted but not yet implemented.
+> **Provenance:** Claude (implementer), sourced from the Hatari fork (tattlemuss/hatari @ 9832e006) and verified 2026-07-10; multi-resolution (BUG-003) added and bench-validated 2026-07-14.
+> **Why this status:** The PAL/NTSC colour mapping (low + medium res) and the high-res mono mapping are confirmed against source and bench-validated. STE fine-scroll and border-removal width changes are noted but not yet implemented.
 
 ---
 
@@ -67,8 +67,26 @@ overlay never lies about a beam position that isn't on screen.
   Phase 1: a left-border-off write makes pixels appear in the normally-black left
   border, and the beam overlay already covers that region.
 - **X precision is 4 cycles (8 px)** — `LineCycles` is quantised to multiples of 4.
-- **Low-res only.** Med/high res change the doubling and byte layout; a resolution
-  read would pick the right constants (later).
+- **All three ST resolutions supported** (BUG-003, bench-validated 2026-07-14):
+  - **Low-res** — 832×552, `x=(cyc−8)·2`, `y=(hbl−34)·2` (above).
+  - **Medium-res** — the *same* geometry. `Screen_SetSTResolution` renders med at
+    640 display px / zoom 1 exactly where low renders 320 / zoom 2, so the surface
+    is still 832×552 and the (cycle,scanline)→pixel mapping is identical. Confirmed
+    by screenshot: a med-res effect (`$ff8260&3==1`) yields an 832×552 frame.
+  - **High-res mono** — a distinct surface (`$ff8260&3==2`): **640×400**, no
+    overscan borders, 71 Hz. Constants from `video.h`: `CYCLES_PER_LINE_71HZ 224`,
+    `SCANLINES_PER_FRAME_71HZ 501`, `FIRST_VISIBLE_HBL_71HZ 34`,
+    `LINE_START_CYCLE_71 0`, display 0..160 cycles → 640 px = **4 px/cycle**, no
+    line doubling:
+
+    ```
+    x = (LineCycles − 0) × 4      // 640 display px / 160 display cycles
+    y = (nHBL       − 34) × 1      // no doubling; 400 visible lines from HBL 34
+    ```
+
+  `BeamGeometry` selects mono when the taken frame's height ≤ 450 (mono 400 vs
+  colour 552) — i.e. it reads the resolution *from the rendered surface* rather
+  than assuming. Reach mono with `talos --mono` (`--monitor mono`).
 - **STE fine scroll / prefetch** shift some windows (Phase 2/3); PAL/NTSC ST here.
 - Region is currently fixed to PAL (the launcher's config). Phase 2 makes it
   selectable and reads it from Hatari rather than assuming.

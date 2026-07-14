@@ -17,6 +17,20 @@ BeamGeometry::BeamGeometry(VideoRegion region, QSize framebufferSize)
     : m_region(region)
     , m_fb(framebufferSize)
 {
+    // High-res mono (video.h *_71HZ / *_MONO) has a distinct 640x400 surface with
+    // no overscan borders and its own timing; the taken frame's height (400 vs the
+    // colour 552) disambiguates it. Colour low- and medium-res share one geometry:
+    // med renders 640 display px at zoom 1 exactly where low renders 320 at zoom 2,
+    // so the (cycle,scanline)->surface-pixel mapping is identical (BUG-003).
+    if (framebufferSize.height() > 0 && framebufferSize.height() <= 450) {
+        m_cyclesPerLine = 224;      // CYCLES_PER_LINE_71HZ
+        m_scanlinesPerFrame = 501;  // SCANLINES_PER_FRAME_71HZ
+        m_firstVisibleHbl = 34;     // FIRST_VISIBLE_HBL_71HZ
+        m_firstVisibleCycle = 0;    // LINE_START_CYCLE_71 (no left border)
+        m_zoomX = 4.0;              // 640 display px / 160 display cycles
+        m_zoomY = 1.0;              // no line doubling
+        return;
+    }
     if (region == VideoRegion::Pal50) {
         m_cyclesPerLine = 512;      // CYCLES_PER_LINE_50HZ
         m_scanlinesPerFrame = 313;  // SCANLINES_PER_FRAME_50HZ

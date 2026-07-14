@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), opened 2026-07-10 during Phase 1.
-> **Last reviewed:** 2026-07-11
+> **Last reviewed:** 2026-07-14
 > **Why this status:** Live register of open issues and by-design limitations. Fixed bugs are not tracked here — they live in git history.
 
 ---
@@ -38,10 +38,16 @@ Follow-up: still *set* rather than *read from the core* — verify against `$ff8
 when convenient.
 
 **BUG-003 — Beam geometry assumes ST low resolution.**
-Status: Open · Severity: Medium · Area: view/BeamGeometry
+Status: Fixed · Severity: Medium · Area: view/BeamGeometry
 The `(scanline, cycle) → pixel` mapping is derived for low-res (320×200, 2× zoom,
 832×552 surface). Medium/high res change the doubling and byte layout; the overlay
 would mis-register. Should read the resolution and pick constants accordingly.
+Fixed: bench-validated that **medium res shares the low-res geometry** (med renders
+640 px / zoom 1 where low renders 320 / zoom 2 → same 832×552 surface and mapping),
+so only **high-res mono** needed distinct constants (640×400, no borders, 224 cyc/
+line, 4 px/cycle, from `video.h` *_71HZ). `BeamGeometry` selects mono when the taken
+frame is ≤450 px tall — reading the resolution from the rendered surface rather than
+assuming. `talos --mono` reaches it. See `docs/phase-1/beam-geometry.md`.
 
 **BUG-004 — Framebuffer is screenshot-poll, not a live stream.**
 Status: Open · Severity: Low · Area: app, protocol
