@@ -150,6 +150,7 @@ private:
     QLabel *m_posLabel = nullptr;
     QLabel *m_captureLabel = nullptr;   // persistent last-capture result
 
+    int m_refreshTick = 0;      // paces the rarely-changing reads (palette/region)
     MachineState m_state;       // latest parsed regs/counters snapshot
     MachineType m_machine = MachineType::ST;      // selected machine
     VideoRegion m_region = VideoRegion::Pal50;    // selected region

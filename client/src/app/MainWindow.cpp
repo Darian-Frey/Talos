@@ -38,7 +38,8 @@
 #include <QToolBar>
 
 namespace {
-constexpr int kLiveIntervalMs = 250;   // ~4 Hz live refresh
+constexpr int kLiveIntervalMs = 50;    // ~20 Hz live refresh (the screenshot path
+                                       // sustains ~60 fps; BUG-004 measurement)
 
 // Decode an ST palette value (%0000 0RRR 0GGG 0BBB, 3 bits/gun) to an RGB colour,
 // so a captured colour-register write is drawn in the colour it set.
@@ -503,10 +504,15 @@ void MainWindow::refresh()
     if (!m_rdb->isConnected())
         return;
     // Chain regs -> screenshot so the beam overlay is computed from the register
-    // snapshot that matches the frame we then grab.
+    // snapshot that matches the frame we then grab. The screenshot path sustains
+    // ~60 fps (BUG-004), so the frame + beam refresh runs every tick (~20 Hz);
+    // the palette and region change rarely, so poll them at ~4 Hz to keep the
+    // per-frame socket load light and avoid queueing.
     refreshRegs();
-    refreshPalette();
-    readRegionFromCore();
+    if (m_refreshTick++ % 5 == 0) {
+        refreshPalette();
+        readRegionFromCore();
+    }
 }
 
 void MainWindow::readRegionFromCore()

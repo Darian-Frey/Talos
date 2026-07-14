@@ -52,10 +52,18 @@ frame is ≤450 px tall — reading the resolution from the rendered surface rat
 assuming. `talos --mono` reaches it. See `docs/phase-1/beam-geometry.md`.
 
 **BUG-004 — Framebuffer is screenshot-poll, not a live stream.**
-Status: Open · Severity: Low · Area: app, protocol
+Status: Fixed · Severity: Low · Area: app, protocol
 Frames are grabbed via `console screenshot` to a file each refresh (~4 Hz), not
 streamed. Fine for M0/Phase 1. If live video or per-cycle event volume is needed,
 this is the C-004/D-004 measurement point (shared-memory embedding fallback).
+Fixed (measured 2026-07-14): the screenshot round-trip (command → PNG written →
+loaded) is ~17 ms median (~60 fps capable), so the ~4 Hz was an *artificial timer
+limit*, not a path/bandwidth constraint — the C-004 answer is that the file-poll
+is adequate and the D-004 shared-memory reversal is **not** needed for frames.
+Raised the live refresh to ~20 Hz (`kLiveIntervalMs` 250→50) and decoupled the
+rarely-changing palette/region reads to ~4 Hz so the per-frame path stays light.
+(Still a poll, not a push stream — but proven sufficient; a B2 framebuffer packet
+remains an option only if per-cycle event volume ever demands it.)
 
 **BUG-005 — B1 register-write capture is a slow snapshot.**
 Status: Open · Severity: Low · Area: capture (planned)
