@@ -49,5 +49,10 @@ __pycache__/
 /tests/effects/raster.json
 /tests/effects/RASTER.PRG
 
+# Exported scroller artefacts (F-212 Export target), not source
+/tests/effects/scroller.s
+/tests/effects/scroller.json
+/tests/effects/SCROLLER.PRG
+
 # Saved machine-state snapshots (F-217 Save state output), not source
 *.sav

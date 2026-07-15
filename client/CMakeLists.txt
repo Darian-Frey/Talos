@@ -20,12 +20,14 @@ add_executable(talos
   src/model/BlitterTrace.cpp
   src/model/DmaSndTrace.cpp
   src/model/RasterCodegen.cpp
+  src/model/ScrollerCodegen.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
   src/view/BlitterTrafficView.cpp
   src/view/DmaSoundView.cpp
   src/view/RasterWorkspace.cpp
+  src/view/ScrollerWorkspace.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

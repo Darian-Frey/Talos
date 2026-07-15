@@ -9,6 +9,8 @@
 #include "view/BlitterTrafficView.h"
 #include "view/DmaSoundView.h"
 #include "view/RasterWorkspace.h"
+#include "view/ScrollerWorkspace.h"
+#include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
 
@@ -39,8 +41,12 @@
 #include <QToolBar>
 
 namespace {
-constexpr int kLiveIntervalMs = 50;    // ~20 Hz live refresh (the screenshot path
-                                       // sustains ~60 fps; BUG-004 measurement)
+constexpr int kLiveIntervalMs = 70;    // ~14 Hz live refresh — each tick does a
+                                       // coherent (fast-forward + VBL-synced) grab
+                                       // so animated effects don't tear (see liveTick)
+constexpr int kCoherentGrabMs = 30;    // settle time for the fast-forward run-to-VBL
+                                       // before grabbing (2 frames complete in <1 ms
+                                       // under fast-forward; this covers socket latency)
 
 // Decode an ST palette value (%0000 0RRR 0GGG 0BBB, 3 bits/gun) to an RGB colour,
 // so a captured colour-register write is drawn in the colour it set.
@@ -89,7 +95,7 @@ MainWindow::MainWindow(Config config, QWidget *parent)
     connect(m_capture, &CaptureController::finished, this, &MainWindow::onCaptureFinished);
 
     m_liveTimer->setInterval(kLiveIntervalMs);
-    connect(m_liveTimer, &QTimer::timeout, this, &MainWindow::refresh);
+    connect(m_liveTimer, &QTimer::timeout, this, &MainWindow::liveTick);
 
     setRunningControlsEnabled(false);
     statusBar()->showMessage(QStringLiteral("Ready. Press %1.")
@@ -301,6 +307,16 @@ void MainWindow::buildUi()
     connect(m_raster, &RasterWorkspace::exportRequested, this, &MainWindow::exportRasterEffect);
     connect(m_raster, &RasterWorkspace::importRequested, this, &MainWindow::importRasterEffect);
 
+    // STE hardware fine-scroll message scroller (F-212, Phase 4).
+    m_scroller = new ScrollerWorkspace(this);
+    auto *scrollerDock = new CollapsibleDock(QStringLiteral("Scroller workspace"), m_scroller, this);
+    addDockWidget(Qt::BottomDockWidgetArea, scrollerDock);
+    tabifyDockWidget(tdock, scrollerDock);
+    connect(m_scroller, &ScrollerWorkspace::buildRequested, this, &MainWindow::buildScrollerEffect);
+    connect(m_scroller, &ScrollerWorkspace::verifyRequested, this, &MainWindow::verifyScrollerEffect);
+    connect(m_scroller, &ScrollerWorkspace::exportRequested, this, &MainWindow::exportScrollerEffect);
+    connect(m_scroller, &ScrollerWorkspace::importRequested, this, &MainWindow::importScrollerEffect);
+
     tdock->raise();   // timeline shown first
 
     // Machine capabilities / differential view (F-207).
@@ -389,6 +405,7 @@ void MainWindow::onStartClicked()
 void MainWindow::doStop()
 {
     m_liveTimer->stop();
+    m_grabbing = false;
     m_rdb->disconnectFromHatari();
     if (!m_config.attachOnly)
         m_launcher->terminate();
@@ -587,6 +604,67 @@ void MainWindow::refresh()
     }
 }
 
+void MainWindow::liveTick()
+{
+    if (!m_rdb->isConnected() || m_grabbing)
+        return;   // skip a tick while a coherent grab is still in flight
+    if (m_refreshTick++ % 5 == 0) {
+        refreshPalette();
+        readRegionFromCore();
+    }
+    // During boot we fast-forward and the screen is static (desktop), so a plain
+    // running grab is fine and keeps the boot-detection poll (checkBootFastForward)
+    // ticking. Once the effect runs (real-time), grab tear-free instead.
+    if (m_bootWatching) {
+        refreshRegs();
+        return;
+    }
+    grabCoherentFrame();
+}
+
+void MainWindow::grabCoherentFrame()
+{
+    // Under real-time, Hatari's remote screenshot grabs a mid-render surface, which
+    // tears animated effects (a scroller shows top/bottom at different scroll
+    // offsets). The render is only complete at a frame boundary, and only reliably
+    // so under fast-forward. So: read the current frame, momentarily fast-forward to
+    // the next VBL (a complete frame), grab there, then resume real-time. Validated
+    // against the Hatari fork — the plain running grab tears, this does not.
+    if (m_shotPath.isEmpty())
+        return;
+    m_grabbing = true;
+    // Stop first so the frame number is read from a settled state (no race), then
+    // fast-forward exactly one frame to the next VBL and grab the complete frame.
+    m_rdb->breakExec([this](const RdbClient::Tokens &) {
+    m_rdb->reqRegs([this](const RdbClient::Tokens &tokens) {
+        m_state = MachineState::fromRegsReply(tokens);
+        updateRegisterPanel();
+        updateStatusBar();
+        const quint32 target = m_state.vbl().value_or(0) + 1;
+        m_rdb->sendCommand("ffwd 1");
+        m_rdb->sendCommand("bp VBL = " + QByteArray::number(target) + " :once");
+        m_rdb->run();
+        QTimer::singleShot(kCoherentGrabMs, this, [this] {
+            m_rdb->screenshot(m_shotPath, [this](const RdbClient::Tokens &reply) {
+                if (!reply.isEmpty() && reply.first() == "OK") {
+                    QImage img(m_shotPath);
+                    if (!img.isNull()) {
+                        m_fb->setImage(img);
+                        const bool beamVisible = updateBeamOverlay(img.size());
+                        recomputeWriteMarks(img.size());
+                        emit frameReceived(m_fb->composite(), beamVisible);
+                    }
+                }
+                m_rdb->sendCommand("ffwd 0");   // restore real-time speed
+                if (m_actLive->isChecked())
+                    m_rdb->run();               // resume only if still live (Break may have paused)
+                m_grabbing = false;
+            });
+        });
+    });
+    });   // close reqRegs + breakExec
+}
+
 void MainWindow::readRegionFromCore()
 {
     // BUG-002 follow-up: rather than assume the selected region, read the sync-mode
@@ -762,6 +840,10 @@ void MainWindow::updateStatusBar()
 
 void MainWindow::doBreak()
 {
+    // Pausing ends live view — otherwise the next coherent grab would run the
+    // machine on again to reach a frame boundary, undoing the break.
+    m_actLive->setChecked(false);   // toggled() stops the live timer
+    m_grabbing = false;
     m_rdb->breakExec([this](const RdbClient::Tokens &) { refresh(); });
 }
 
@@ -1166,6 +1248,194 @@ void MainWindow::importRasterEffect()
         return;
     }
     m_raster->loadEntries(bands ? RasterWorkspace::Bands : RasterWorkspace::Bars, entries);
+}
+
+void MainWindow::buildScrollerEffect(const QString &message, int speed)
+{
+    if (message.trimmed().isEmpty()) {
+        m_scroller->setResult(QStringLiteral("Type a message first."), false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    if (!QFileInfo::exists(vasm)) {
+        m_scroller->setResult(QStringLiteral("vasm not found — run scripts/bootstrap-vasm.sh"), false);
+        return;
+    }
+    if (!m_scrollerDir.isValid()) {
+        m_scroller->setResult(QStringLiteral("no scratch directory"), false);
+        return;
+    }
+    const QString srcPath = m_scrollerDir.filePath(QStringLiteral("scroller.s"));
+    QDir(m_scrollerDir.path()).mkpath(QStringLiteral("AUTO"));
+    QFile f(srcPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_scroller->setResult(QStringLiteral("could not write scroller.s"), false);
+        return;
+    }
+    f.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    f.close();
+
+    m_scroller->setBusy(true);
+    m_scroller->setResult(QStringLiteral("Assembling…"), true);
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this, [this, proc](int code, QProcess::ExitStatus) {
+        m_scroller->setBusy(false);
+        if (code != 0) {
+            m_scroller->setResult(QStringLiteral("vasm failed: %1").arg(
+                QString::fromUtf8(proc->readAllStandardError()).left(200)), false);
+        } else {
+            // The effect is STE-only (hardware scroll), so preview on STE/PAL.
+            {
+                const QSignalBlocker b1(m_machineCombo), b2(m_regionCombo);
+                m_machine = MachineType::STE;
+                m_region = VideoRegion::Pal50;
+                m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
+                m_regionCombo->setCurrentIndex(0);
+            }
+            updateCapabilities();
+            m_config.hatari.gemdosDir = m_scrollerDir.path();
+            m_scroller->setResult(QStringLiteral("Built SCROLLER.PRG — launching on STE/PAL…"), true);
+            if (m_launcher->isRunning() || m_rdb->isConnected())
+                relaunch();
+            else
+                onStartClicked();
+        }
+        proc->deleteLater();
+    });
+    proc->start(vasm, {QStringLiteral("-Ftos"),
+                       QStringLiteral("-o"), m_scrollerDir.filePath(QStringLiteral("AUTO/SCROLLER.PRG")),
+                       srcPath});
+}
+
+void MainWindow::verifyScrollerEffect(const QString &message, int speed)
+{
+    if (message.trimmed().isEmpty()) {
+        m_scroller->setResult(QStringLiteral("Type a message first."), false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString tool = repo + QStringLiteral("/harness/scroller_scroll.py");
+    if (!QFileInfo::exists(tool)) {
+        m_scroller->setResult(QStringLiteral("verify harness not found: %1").arg(tool), false);
+        return;
+    }
+    // The harness assembles the client-generated stub (the font lives in C++, so
+    // it can't regenerate it), so write scroller.s out and hand it the path.
+    if (!m_scrollerDir.isValid()) {
+        m_scroller->setResult(QStringLiteral("no scratch directory"), false);
+        return;
+    }
+    const QString srcPath = m_scrollerDir.filePath(QStringLiteral("scroller.s"));
+    QFile sf(srcPath);
+    if (!sf.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_scroller->setResult(QStringLiteral("could not write scroller.s"), false);
+        return;
+    }
+    sf.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    sf.close();
+
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        doStop();   // the harness launches its own Hatari on the fixed port
+
+    QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                     QStringLiteral("--tos"), m_config.hatari.tosImage,
+                     QStringLiteral("--asm"), srcPath,
+                     QStringLiteral("--speed"), QString::number(speed),
+                     QStringLiteral("--message"), message};
+
+    m_scroller->setBusy(true);
+    m_scroller->setResult(QStringLiteral("Verifying on Hatari (headless, ~15 s)…"), true);
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this, [this, proc](int code, QProcess::ExitStatus) {
+        m_scroller->setBusy(false);
+        const QString out = QString::fromUtf8(proc->readAllStandardOutput());
+        const bool ok = (code == 0) && out.contains(QStringLiteral("RESULT: PASS"));
+        m_scroller->setResult(
+            ok ? QStringLiteral("Verified ✓ — message renders and scrolls smoothly left")
+               : QStringLiteral("Verify FAILED — %1").arg(out.section('\n', -2).trimmed()),
+            ok);
+        proc->deleteLater();
+    });
+    proc->start(QStringLiteral("python3"), args);
+}
+
+void MainWindow::exportScrollerEffect(const QString &message, int speed)
+{
+    if (message.trimmed().isEmpty()) {
+        m_scroller->setResult(QStringLiteral("Type a message first."), false);
+        return;
+    }
+    const QString dir = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("Export scroller effect to folder"));
+    if (dir.isEmpty())
+        return;   // cancelled
+
+    // 1. The asm stub (the runnable export artefact).
+    QFile s(QDir(dir).filePath(QStringLiteral("scroller.s")));
+    if (!s.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_scroller->setResult(QStringLiteral("could not write to %1").arg(dir), false);
+        return;
+    }
+    s.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    s.close();
+
+    // 2. The portable sequence form: the STE fine-scroll register + message/speed.
+    const QJsonObject seq{
+        {QStringLiteral("effect"), QStringLiteral("ste-hardware-scroller")},
+        {QStringLiteral("generator"), QStringLiteral("Talos F-212")},
+        {QStringLiteral("machine"), QStringLiteral("ste")},
+        {QStringLiteral("region"), QStringLiteral("pal")},
+        {QStringLiteral("register"), QStringLiteral("ff8265")},
+        {QStringLiteral("sync"), QStringLiteral("vbl")},
+        {QStringLiteral("speed"), speed},
+        {QStringLiteral("message"), message}};
+    QFile j(QDir(dir).filePath(QStringLiteral("scroller.json")));
+    if (j.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        j.write(QJsonDocument(seq).toJson());
+        j.close();
+    }
+
+    // 3. Assemble the runnable .PRG alongside (best-effort).
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    QString prgNote;
+    if (QFileInfo::exists(vasm)) {
+        QProcess p;
+        p.start(vasm, {QStringLiteral("-Ftos"), QStringLiteral("-o"),
+                       QDir(dir).filePath(QStringLiteral("SCROLLER.PRG")),
+                       QDir(dir).filePath(QStringLiteral("scroller.s"))});
+        prgNote = (p.waitForFinished(5000) && p.exitCode() == 0)
+                      ? QStringLiteral(" + SCROLLER.PRG")
+                      : QString();
+    }
+    m_scroller->setResult(
+        QStringLiteral("Exported scroller.s + scroller.json%1 to %2").arg(prgNote, dir), true);
+}
+
+void MainWindow::importScrollerEffect()
+{
+    const QString file = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import scroller sequence"), QString(),
+        QStringLiteral("Scroller sequence (*.json)"));
+    if (file.isEmpty())
+        return;
+    QFile f(file);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        m_scroller->setResult(QStringLiteral("could not open %1").arg(file), false);
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject()
+        || doc.object().value(QStringLiteral("effect")).toString()
+               != QStringLiteral("ste-hardware-scroller")) {
+        m_scroller->setResult(QStringLiteral("not a Talos scroller sequence"), false);
+        return;
+    }
+    const QJsonObject o = doc.object();
+    m_scroller->loadFrom(o.value(QStringLiteral("message")).toString(),
+                         o.value(QStringLiteral("speed")).toInt(ScrollerCodegen::kDefaultSpeed));
 }
 
 void MainWindow::onFramebufferClicked(const QPointF &imagePixel)

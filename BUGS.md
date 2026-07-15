@@ -2,7 +2,7 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), opened 2026-07-10 during Phase 1.
-> **Last reviewed:** 2026-07-14
+> **Last reviewed:** 2026-07-15
 > **Why this status:** Live register of open issues and by-design limitations. Fixed bugs are not tracked here — they live in git history.
 
 ---
@@ -102,3 +102,24 @@ their raster-budget effect — an effect that holds at one and breaks at the oth
 but cannot honestly show intra-setting cache/bus bimodality: synthesising it would
 mean adding emulation Hatari lacks, forbidden by D-002. Not a defect but a bound on
 what the visualiser can truthfully show; records the C-005 clarification.
+
+---
+
+**BUG-009 — Live view tears animated effects (mid-render screenshot grab).**
+Status: Fixed · Severity: Medium · Area: app (live refresh)
+The live view polled `console screenshot` while Hatari free-ran at real time, so it
+grabbed a mid-render surface — the top of the frame from the new frame, the bottom
+from the previous. Static effects never showed it (every frame is identical), but
+the STE hardware scroller (the first *animated* effect, F-211/F-212) sheared
+intermittently, worse at higher scroll speeds (bigger per-frame offset). The effect
+itself is correct: stopped at a frame boundary the memory is stable and renders
+clean (the round-trip harness and the exported `.PRG` are seam-free) — this was a
+capture-timing artifact only. Sourced against the fork: Hatari yields a complete
+frame only when stopped at a VBL *under fast-forward*; at real time (even VBL-
+stopped) the render is throttled and grabs tear. Fixed (2026-07-15): the live tick
+now grabs coherently — break, `ffwd 1`, run to the next VBL (a complete frame),
+screenshot, `ffwd 0`, resume — with an in-flight guard so ticks can't overlap and
+Break disabling live so a paused machine is never silently resumed. Boot keeps the
+plain grab (static screen; preserves the BUG-007 detection poll). Costs a little
+preview rate (~20→~14 Hz) and fixes tearing for all animated content. Verified: a
+speed-8 scroller frame grabbed by the real client is clean and legible.

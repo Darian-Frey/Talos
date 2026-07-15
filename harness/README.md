@@ -76,6 +76,25 @@ vertical bands per line, the way Spectrum 512 packs 44+ writes/line. Verified at
 per-gap calibrated delay (`col ~= 78 + 76 + 24*L`), and checks each lands within
 tolerance. This is the calibration the client's Bands mode uses for click-to-place.
 
+## STE hardware scroller (Phase 4)
+
+`scroller_scroll.py` verifies the STE hardware fine-scroll message scroller. It
+assembles the **client-generated** stub (the glyph font lives in C++, so the
+harness does not regenerate it — pass `--asm <scroller.s>`), runs it on an STE,
+and checks the message renders and scrolls smoothly left at the authored speed
+with no seam. Robust metric: correlate frame 0 against frames 1..k — same content
+just shifted, so the lag grows a steady `+2*speed` screen px/frame; a real seam
+breaks that line, sparse-text correlation glitches (tolerated, ≤2) do not.
+
+```bash
+python3 harness/scroller_scroll.py --hatari <bin> --tos <rom> \
+    --asm /path/to/scroller.s --speed 1 --message "HELLO"
+```
+
+Two Hatari measurement traps this (and any per-frame) harness must respect:
+`--frameskips 0` (fast-forward frame-skips rendering, so screenshots go stale) and
+targeting a VBL relative to / above the live count (fast-forward races past boot).
+
 ## How it works
 
 For each run it launches Hatari (fast-forward, headless, clean config) with the

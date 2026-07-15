@@ -23,6 +23,7 @@ class PaletteView;
 class BlitterTrafficView;
 class DmaSoundView;
 class RasterWorkspace;
+class ScrollerWorkspace;
 class LedToolButton;
 class CaptureController;
 class QProcess;
@@ -77,7 +78,9 @@ private slots:
     void onConnected();
     void onConnectionFailed(const QString &reason);
     void onNotification(const QByteArray &name, const QList<QByteArray> &args);
-    void refresh();             // pull regs + a fresh framebuffer
+    void refresh();             // pull regs + a fresh framebuffer (one-off, machine stopped)
+    void liveTick();            // live-timer tick: coherent frame grab while running
+    void grabCoherentFrame();   // tear-free grab: fast-forward to a VBL, shot, resume
     void doBreak();
     void doRun();
     void doStep();
@@ -89,6 +92,10 @@ private slots:
     void verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 round-trip
     void exportRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 asm + sequence
     void importRasterEffect();                                        // F-212 load a sequence
+    void buildScrollerEffect(const QString &message, int speed);      // F-212 STE scroller
+    void verifyScrollerEffect(const QString &message, int speed);
+    void exportScrollerEffect(const QString &message, int speed);
+    void importScrollerEffect();
     void onFramebufferClicked(const QPointF &imagePixel);   // click-to-place authoring
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
@@ -122,7 +129,9 @@ private:
     BlitterTrafficView *m_blitView = nullptr;
     DmaSoundView *m_dmaView = nullptr;
     RasterWorkspace *m_raster = nullptr;
+    ScrollerWorkspace *m_scroller = nullptr;
     QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG
+    QTemporaryDir m_scrollerDir;          // holds the generated scroller .s + AUTO/SCROLLER.PRG
     QProcess *m_rasterProc = nullptr;     // vasm / verify subprocess (one at a time)
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;
@@ -161,6 +170,7 @@ private:
     QLabel *m_captureLabel = nullptr;   // persistent last-capture result
 
     int m_refreshTick = 0;      // paces the rarely-changing reads (palette/region)
+    bool m_grabbing = false;    // a coherent live grab is in flight (skip overlapping ticks)
     bool m_bootWatching = false;   // fast-forwarding boot, watching for the effect (BUG-007)
     int m_bootRamHits = 0;         // consecutive polls with PC stable in the effect's loop
     int m_bootPolls = 0;           // total watch polls (safety timeout)
