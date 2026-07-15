@@ -50,15 +50,18 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     auto *del = new QPushButton(QStringLiteral("－"), m_actions);
     auto *build = new QPushButton(QStringLiteral("Build & Run"), m_actions);
     auto *verify = new QPushButton(QStringLiteral("Verify on Hatari"), m_actions);
+    auto *import = new QPushButton(QStringLiteral("Import…"), m_actions);
     auto *xport = new QPushButton(QStringLiteral("Export…"), m_actions);
     build->setToolTip(QStringLiteral("Codegen -> vasm -> run the effect in Hatari (F-212)"));
     verify->setToolTip(QStringLiteral("Run the exported stub through the round-trip harness"));
+    import->setToolTip(QStringLiteral("Load a register sequence (raster.json) back into the workspace"));
     xport->setToolTip(QStringLiteral("Write the .s stub, assembled .PRG and register sequence to a folder"));
     btns->addWidget(add);
     btns->addWidget(del);
     btns->addStretch();
     btns->addWidget(build);
     btns->addWidget(verify);
+    btns->addWidget(import);
     btns->addWidget(xport);
     lay->addWidget(m_actions);
 
@@ -78,6 +81,7 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
             [this] { emit buildRequested(bars()); });
     connect(verify, &QPushButton::clicked, this,
             [this] { emit verifyRequested(bars()); });
+    connect(import, &QPushButton::clicked, this, [this] { emit importRequested(); });
     connect(xport, &QPushButton::clicked, this,
             [this] { emit exportRequested(bars()); });
 
@@ -182,6 +186,17 @@ QVector<RasterCodegen::Bar> RasterWorkspace::bars() const
             out.append({line, col});
     }
     return out;
+}
+
+void RasterWorkspace::loadEntries(Mode mode, const QVector<QPair<int, quint16>> &entries)
+{
+    m_mode->setCurrentIndex(mode);   // updates the header + hint via its signal
+    m_table->setRowCount(0);
+    for (const auto &e : entries)
+        addBar(e.first, e.second);   // col-0 holds a scanline (Bars) or column (Bands)
+    setResult(QStringLiteral("Imported %1 %2.").arg(entries.size())
+                  .arg(mode == Bands ? QStringLiteral("bands") : QStringLiteral("bars")),
+              true);
 }
 
 void RasterWorkspace::placeFromClick(int line, int column)

@@ -88,6 +88,7 @@ private slots:
     void buildRasterEffect(const QVector<RasterCodegen::Bar> &bars);   // F-212 codegen+run
     void verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 round-trip
     void exportRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 asm + sequence
+    void importRasterEffect();                                        // F-212 load a sequence
     void onFramebufferClicked(const QPointF &imagePixel);   // click-to-place authoring
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);

@@ -33,10 +33,15 @@ public:
     void setBusy(bool busy);                 // disable actions during build/verify
     void setResult(const QString &text, bool ok);
 
+    // Replace the table from an imported sequence: set the mode and rows
+    // (each entry is scanline-or-column + colour). Used by register-sequence import.
+    void loadEntries(Mode mode, const QVector<QPair<int, quint16>> &entries);
+
 signals:
     void buildRequested(const QVector<RasterCodegen::Bar> &bars);
     void verifyRequested(const QVector<RasterCodegen::Bar> &bars);
     void exportRequested(const QVector<RasterCodegen::Bar> &bars);
+    void importRequested();
 
 private:
     void addBar(int line, quint16 colour);

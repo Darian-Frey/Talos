@@ -299,6 +299,7 @@ void MainWindow::buildUi()
     connect(m_raster, &RasterWorkspace::buildRequested, this, &MainWindow::buildRasterEffect);
     connect(m_raster, &RasterWorkspace::verifyRequested, this, &MainWindow::verifyRasterEffect);
     connect(m_raster, &RasterWorkspace::exportRequested, this, &MainWindow::exportRasterEffect);
+    connect(m_raster, &RasterWorkspace::importRequested, this, &MainWindow::importRasterEffect);
 
     tdock->raise();   // timeline shown first
 
@@ -1128,6 +1129,43 @@ void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 
     m_raster->setResult(
         QStringLiteral("Exported raster.s + raster.json%1 to %2").arg(prgNote, dir), true);
+}
+
+void MainWindow::importRasterEffect()
+{
+    const QString file = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import register sequence"), QString(),
+        QStringLiteral("Register sequence (*.json)"));
+    if (file.isEmpty())
+        return;
+    QFile f(file);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        m_raster->setResult(QStringLiteral("could not open %1").arg(file), false);
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+    f.close();
+    if (!doc.isObject()) {
+        m_raster->setResult(QStringLiteral("not a valid register sequence"), false);
+        return;
+    }
+    const QJsonObject o = doc.object();
+    // "vertical-bands" -> Bands (column,colour); anything else -> Bars (scanline,colour).
+    const bool bands = o.value(QStringLiteral("effect")).toString() == QStringLiteral("vertical-bands");
+    QVector<QPair<int, quint16>> entries;
+    for (const QJsonValue &wv : o.value(QStringLiteral("writes")).toArray()) {
+        const QJsonObject w = wv.toObject();
+        const int pos = bands ? w.value(QStringLiteral("column")).toInt()
+                              : w.value(QStringLiteral("scanline")).toInt();
+        const quint16 col = static_cast<quint16>(
+            w.value(QStringLiteral("value")).toString().toUShort(nullptr, 16) & 0x777);
+        entries.append({pos, col});
+    }
+    if (entries.isEmpty()) {
+        m_raster->setResult(QStringLiteral("no writes found in %1").arg(file), false);
+        return;
+    }
+    m_raster->loadEntries(bands ? RasterWorkspace::Bands : RasterWorkspace::Bars, entries);
 }
 
 void MainWindow::onFramebufferClicked(const QPointF &imagePixel)
