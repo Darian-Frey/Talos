@@ -2,13 +2,21 @@
 
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QScrollArea>
 #include <QToolButton>
 
 CollapsibleDock::CollapsibleDock(const QString &title, QWidget *content, QWidget *parent)
     : QDockWidget(title, parent)
-    , m_content(content)
 {
-    setWidget(content);
+    // Wrap the content in a scroll area so the dock's minimum stays small: the
+    // window can be shrunk to fit any screen and each panel scrolls internally
+    // rather than forcing the whole window taller than the display.
+    auto *scroll = new QScrollArea(this);
+    scroll->setWidget(content);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    m_content = scroll;
+    setWidget(scroll);
 
     auto *bar = new QWidget(this);
     bar->setObjectName(QStringLiteral("dockTitleBar"));
