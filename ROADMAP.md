@@ -3,7 +3,7 @@
 > **Status:** Active
 > **Provenance:** Design session with Claude (primary architect/auditor).
 > **Last reviewed:** 2026-07-16
-> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–4 implemented (M0–M4 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210), and the effect prototype→export→verify loop (F-211/F-212) — raster bars, intra-line vertical bands (Spectrum-512-lite, arbitrary-column) and the STE hardware scroller, each with an asm-stub + register-sequence export and a round-trip harness. Phase 5 (the from-scratch core) is untouched, by design. Full Spectrum-512 *image* authoring is an optional stretch beyond the closed loop, not a Phase-4 blocker.
+> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–4 implemented (M0–M4 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210), and the effect prototype→export→verify loop (F-211/F-212) — raster bars, intra-line vertical bands (Spectrum-512-lite, arbitrary-column) and the STE hardware scroller, each with an asm-stub + register-sequence export and a round-trip harness. Also built under F-211: a Spectrum 512 picture viewer — import a real `.SPU`/`.SPC` or convert any image to S512, decode it, and visualise the per-scanline palette storm (Talos shows the picture and its timing; it does not reproduce the effect on hardware, the tightest ST trick). Phase 5 (the from-scratch core) is untouched, by design. Phase 6 collects deeper-visualisation and interop features as an à la carte backlog (timeline scrubber, border walkthrough, F-218, sync-scroll, more image formats, …) — not on any critical path.
 
 ---
 
@@ -78,6 +78,39 @@ Each phase lists its **goal**, the **B1/B2 split** (client-over-protocol versus 
 Swap a bespoke cycle-exact core in behind the **same client protocol**, so the client is unaffected. Undertaken only if (a) ownership of the emulation core becomes a goal in its own right, or (b) a **non-GPL** result becomes a hard requirement (C-007). This is a multi-year effort in its own right and is explicitly *not* on the critical path.
 
 **Exit criterion.** N/A unless triggered. If triggered, parity with Hatari on the regression corpus is the bar.
+
+## Phase 6 — Deeper visualisation & interop (à la carte backlog)
+
+**Goal.** Widen *what* Talos makes visible and *how* effects get in and out, without touching the Phase-5 core question. These are independent items — not a strict order — prioritised by how directly they serve the mission ("show the timing", never emulate; D-002). Schedule them individually; each earns an F-NNN entry in `REGISTERS.md` when it is actually taken up, and round-trips through the harness on its own.
+
+**Tier 1 — closest to the mission (some already flagged):**
+
+- **Per-frame timeline scrubber.** Drag a cursor through one frame; every register write lights up at its scanline+cycle and the screen rebuilds up to that point. Extends the existing register-write capture + beam overlay.
+- **Border-removal walkthrough.** A guided view of each of the four ST borders (left/right/top/bottom): the exact sync/resolution write, the cycle window it must hit, and the border opening as a consequence — finishes M1's story, which the overlay covers only partially today.
+- **F-218 — reconstruct-from-registers view.** A second screen rebuilt *from the register writes*, beside Hatari's taken framebuffer, so you see *why* the picture looks as it does. Already registered; per D-007 it is secondary and never replaces F-202.
+- **Sync-scroll.** Author/visualise the sync-scroll trick — completes the "one production per hard trick" regression corpus alongside the four borders, Spectrum 512 and the STE hardware scroller.
+
+**Tier 2 — natural extensions of what's built:**
+
+- **More ST image formats** — Degas (`.PI1/.PC1`), NEOchrome (`.NEO`), Tiny (`.TNY`) — reusing the Spectrum 512 palette/decode plumbing (F-211).
+- **Live disassembly synced to the beam** — the 68k around PC (an effect's per-scanline loop) with *where each instruction lands on the beam*. hrdb has the raw pieces; Talos re-aims them at "this write happens here".
+- **MFP timer / interrupt visualisation** — Timer A–D configuration and when each interrupt fires on the beam (Timer-B drives Spectrum 512, HBL drives scrollers).
+- **Per-scanline cycle-budget meter** — cycles used vs the ~512-per-line budget for an authored effect, and where it overflows (ties to the Mega STE dual-speed view, F-210).
+
+**Tier 3 — presentation & interop:**
+
+- **Frame / GIF recorder** — capture the (now tear-free, BUG-009) live view to a clip for sharing an effect.
+- **A/B machine comparison** — the same effect on two machines/regions side by side, highlighting where the STE prefetch shift breaks it (extends the F-207 differential).
+- **Custom font import for the scroller** — bring-your-own font (from an image) instead of the built-in 8×8 (F-212 scroller).
+
+**Housekeeping already on the books:**
+
+- **F-216** — Hatari configuration generation, shareable in concept with Hermes (decide when Hermes work begins).
+- **Regression-corpus runner** — one command that runs the whole corpus and reports per-scanline diffs against stock Hatari (extends `harness/diff_harness.py`).
+
+**B1/B2.** Mostly B1 + client-side. Live disassembly and the MFP/timer taps may need a B2 tap confirmed against source first — justify each one and keep it surgical (C-002/C-003).
+
+**Exit criterion.** None as a whole — this is an à la carte backlog; each item ships, earns its F-NNN, and is harness-checked on its own.
 
 ---
 
