@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Design session with Claude (primary architect/auditor).
-> **Last reviewed:** 2026-07-12
-> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–3 implemented (M0–M3 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, and all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210). Phase 4 started: the raster-bar prototype→export→verify round-trip is in (F-211/F-212 pilot — client workspace + `raster_roundtrip.py`); intra-line effects (Spectrum 512) and register-sequence export remain toward M4.
+> **Last reviewed:** 2026-07-16
+> **Why this status:** Phases are defined and ordered to de-risk the hardest work first (prove the pipe, then visualise, then deepen). Phases 0–4 implemented (M0–M4 reached): the pipe, the beam/register-write visualisation + harness, machine/region selection, all three hard subsystems (Blitter F-208, DMA/LMC1992 F-209, Mega STE dual-speed F-210), and the effect prototype→export→verify loop (F-211/F-212) — raster bars, intra-line vertical bands (Spectrum-512-lite, arbitrary-column) and the STE hardware scroller, each with an asm-stub + register-sequence export and a round-trip harness. Phase 5 (the from-scratch core) is untouched, by design. Full Spectrum-512 *image* authoring is an optional stretch beyond the closed loop, not a Phase-4 blocker.
 
 ---
 
@@ -98,4 +98,4 @@ The harness is not a final QA step; it is the continuous check that Talos's inst
 - **M1** — invisible made visible on one effect, harness live (end of Phase 1). ✓
 - **M2** — all machines/regions, differential view (end of Phase 2). ✓
 - **M3** — hard subsystems visualised (end of Phase 3). ✓
-- **M4** — prototype-and-export loop closed (end of Phase 4).
+- **M4** — prototype-and-export loop closed (end of Phase 4). ✓

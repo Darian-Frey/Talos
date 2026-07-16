@@ -1,9 +1,9 @@
 # Talos
 
 > **Status:** Active
-> **Provenance:** Design session with Claude (primary architect/auditor). Hatari facts verified against upstream documentation and the tattlemuss/bradsmith forks on 2026-07-08.
-> **Last reviewed:** 2026-07-08
-> **Why this status:** Design is documented and the core architectural fork (Option B, remote-client-on-Hatari) is decided and grounded in working prior art (hrdb). No Talos code has been written yet; this scaffold is the handoff into implementation.
+> **Provenance:** Design session with Claude (primary architect/auditor); implementation by Claude (implementer) through Phase 4. Hatari facts verified against upstream documentation and the tattlemuss/bradsmith forks on 2026-07-08.
+> **Last reviewed:** 2026-07-16
+> **Why this status:** The architecture (Option B, remote-client-on-Hatari) is decided, grounded in working prior art (hrdb), and **built** — the client is implemented through Phase 4 (M0–M4: live client, machine/region gating, Blitter/DMA/dual-speed views, and the effect prototype→export→verify loop incl. the STE hardware scroller), plus F-217 state snapshots. Phase 5 (the from-scratch core) is untouched, by design. See `manual.md` to use it, `CLAUDE.md`/`ROADMAP.md` for state, `git log` for the authoritative detail.
 
 ---
 
@@ -27,6 +27,7 @@ Talos does **not** contain an emulation core. It is a **Qt6 client** that drives
 | Document | Purpose |
 |---|---|
 | `README.md` | This file — what Talos is and where to start. |
+| `manual.md` | User manual — set-up, every control, and the authoring/verify workflows. |
 | `ARCHITECTURE.md` | The two-process design, the Hatari fork and remote protocol, the B1/B2 instrumentation layering, the subsystem taps, and the data flow. |
 | `ROADMAP.md` | The six-phase build plan (0–5), keyed to the architecture, with the validation harness as a cross-cutting concern. |
 | `DECISIONS.md` | Append-only decision register (D-NNN, Talos-scoped), each with a reversal condition. |
