@@ -56,3 +56,9 @@ __pycache__/
 
 # Saved machine-state snapshots (F-217 Save state output), not source
 *.sav
+
+# Spectrum 512 sample pictures are user-supplied (copyright), like TOS images (C-009)
+*.spu
+*.spc
+*.SPU
+*.SPC

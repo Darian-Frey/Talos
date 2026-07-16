@@ -21,6 +21,7 @@ add_executable(talos
   src/model/DmaSndTrace.cpp
   src/model/RasterCodegen.cpp
   src/model/ScrollerCodegen.cpp
+  src/model/Spectrum512.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
@@ -28,6 +29,7 @@ add_executable(talos
   src/view/DmaSoundView.cpp
   src/view/RasterWorkspace.cpp
   src/view/ScrollerWorkspace.cpp
+  src/view/Spectrum512View.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

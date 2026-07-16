@@ -10,6 +10,7 @@
 #include "view/DmaSoundView.h"
 #include "view/RasterWorkspace.h"
 #include "view/ScrollerWorkspace.h"
+#include "view/Spectrum512View.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -316,6 +317,14 @@ void MainWindow::buildUi()
     connect(m_scroller, &ScrollerWorkspace::verifyRequested, this, &MainWindow::verifyScrollerEffect);
     connect(m_scroller, &ScrollerWorkspace::exportRequested, this, &MainWindow::exportScrollerEffect);
     connect(m_scroller, &ScrollerWorkspace::importRequested, this, &MainWindow::importScrollerEffect);
+
+    // Spectrum 512 picture viewer (F-211): import a .SPU, decode it, and visualise
+    // the per-scanline palette storm. A local file analyser — no running machine
+    // needed (Talos shows the picture and its timing, not a hardware reproduction).
+    m_spectrum = new Spectrum512View(this);
+    auto *spectrumDock = new CollapsibleDock(QStringLiteral("Spectrum 512"), m_spectrum, this);
+    addDockWidget(Qt::BottomDockWidgetArea, spectrumDock);
+    tabifyDockWidget(tdock, spectrumDock);
 
     tdock->raise();   // timeline shown first
 
