@@ -177,6 +177,8 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 - **DMA sound / EQ** — the F-209 DMA-sound drain + LMC1992 EQ view.
 - **Raster workspace** — author raster-bar / vertical-band effects (§6).
 - **Scroller workspace** — author an STE hardware fine-scroll scroller (§7).
+- **Spectrum 512** — import/convert a 512-colour picture and visualise its
+  per-scanline palette storm (§7a).
 
 ---
 
@@ -254,6 +256,30 @@ Open the **Scroller workspace** tab (STE-only effect — Build previews on STE/P
 
 `scroller.json` shape: `{"effect":"ste-hardware-scroller", …, "register":"ff8265",
 "speed":N, "message":"…"}`.
+
+---
+
+## 7a. Spectrum 512 pictures (Spectrum 512 tab)
+
+Spectrum 512 shows up to 512 colours on an ST by rewriting the 16-register palette
+~48 times per scanline. Talos **decodes and visualises** such pictures — it does
+not reproduce the effect on hardware (the tightest classic ST timing trick, out of
+scope). The tab has three actions:
+
+- **Import .SPU/.SPC…** — load a real Spectrum 512 picture (uncompressed `.SPU`
+  or compressed `.SPC`) and decode it exactly.
+- **Import image…** — load *any* image Qt can read (PNG/JPG/BMP/GIF/…) and
+  **convert** it to a Spectrum 512 picture. Detailed, colourful images convert
+  well; smooth gradients band — that is S512's inherent ~10 px colour-change
+  limit, not a defect.
+- **Export .SPU…** — save the current picture (imported or converted) as a `.SPU`
+  file that Talos (and other tools) can reload.
+
+Below the buttons: the decoded **picture** (click a row, or use the **Scanline**
+spinner, to inspect it) and the **palette storm** for the selected line — the
+resolved scanline, where each of the 16 registers flips set 1 → set 2 (at
+`x = 1,5,21,25,…`) and set 2 → set 3 (160 px later) across the beam, and the three
+16-colour palette sets. Sample pictures are user-supplied (copyright, like TOS).
 
 ---
 

@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QFile>
 #include <QHBoxLayout>
+#include <QImage>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -97,10 +98,20 @@ Spectrum512View::Spectrum512View(QWidget *parent)
     lay->setContentsMargins(6, 6, 6, 6);
 
     auto *top = new QHBoxLayout;
-    auto *import = new QPushButton(QStringLiteral("Import picture…"), this);
-    import->setToolTip(QStringLiteral(
+    auto *importPic = new QPushButton(QStringLiteral("Import .SPU/.SPC…"), this);
+    importPic->setToolTip(QStringLiteral(
         "Load a Spectrum 512 picture (.SPU uncompressed or .SPC compressed) and decode it (F-211)"));
-    top->addWidget(import);
+    top->addWidget(importPic);
+    auto *importImg = new QPushButton(QStringLiteral("Import image…"), this);
+    importImg->setToolTip(QStringLiteral(
+        "Load any image (PNG/JPG/BMP/…) and convert it to a Spectrum 512 picture. "
+        "Detailed/colourful images convert well; smooth gradients band (S512's inherent limit)."));
+    top->addWidget(importImg);
+    m_exportBtn = new QPushButton(QStringLiteral("Export .SPU…"), this);
+    m_exportBtn->setToolTip(QStringLiteral("Save the current picture as a .SPU file Talos can reload"));
+    m_exportBtn->setEnabled(false);
+    top->addWidget(m_exportBtn);
+    top->addSpacing(12);
     top->addWidget(new QLabel(QStringLiteral("Scanline"), this));
     m_lineSpin = new QSpinBox(this);
     m_lineSpin->setRange(1, Spectrum512::kRows);
@@ -129,7 +140,9 @@ Spectrum512View::Spectrum512View(QWidget *parent)
     m_storm = new StormStrip(this);
     lay->addWidget(m_storm);
 
-    connect(import, &QPushButton::clicked, this, &Spectrum512View::importSpu);
+    connect(importPic, &QPushButton::clicked, this, &Spectrum512View::importSpu);
+    connect(importImg, &QPushButton::clicked, this, &Spectrum512View::importImage);
+    connect(m_exportBtn, &QPushButton::clicked, this, &Spectrum512View::exportSpu);
     connect(m_lineSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
             &Spectrum512View::setLine);
 }
@@ -148,14 +161,56 @@ void Spectrum512View::importSpu()
     }
     m_img = Spectrum512::parse(f.readAll());
     f.close();
+    presentImage(QFileInfo(file).fileName());
+}
+
+void Spectrum512View::importImage()
+{
+    const QString file = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Import an image to convert to Spectrum 512"), QString(),
+        QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tif *.tiff);;All files (*)"));
+    if (file.isEmpty())
+        return;
+    QImage src(file);
+    if (src.isNull()) {
+        m_info->setText(QStringLiteral("could not load %1 as an image").arg(file));
+        return;
+    }
+    m_info->setText(QStringLiteral("Converting to Spectrum 512…"));
+    m_info->repaint();
+    m_img = Spectrum512::convertImage(src);
+    presentImage(QStringLiteral("%1 → S512").arg(QFileInfo(file).fileName()));
+}
+
+void Spectrum512View::exportSpu()
+{
+    if (!m_img.valid)
+        return;
+    const QString file = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Export as .SPU"), QStringLiteral("picture.spu"),
+        QStringLiteral("Spectrum 512 uncompressed (*.spu)"));
+    if (file.isEmpty())
+        return;
+    QFile f(file);
+    if (!f.open(QIODevice::WriteOnly)) {
+        m_info->setText(QStringLiteral("could not write %1").arg(file));
+        return;
+    }
+    f.write(Spectrum512::encodeSpu(m_img));
+    f.close();
+    m_info->setText(QStringLiteral("Exported %1").arg(QFileInfo(file).fileName()));
+}
+
+void Spectrum512View::presentImage(const QString &sourceName)
+{
     if (!m_img.valid) {
         m_info->setText(m_img.error);
         m_picture->clear();
         m_lineSpin->setEnabled(false);
+        m_exportBtn->setEnabled(false);
         m_storm->setLine(nullptr, 0);
         return;
     }
-
     updatePicture();
 
     QSet<QRgb> uniq;
@@ -165,10 +220,11 @@ void Spectrum512View::importSpu()
             uniq.insert(scan[x]);
     }
     m_info->setText(QStringLiteral("%1 (%2) — 320×%3, %4 unique colours")
-                        .arg(QFileInfo(file).fileName(), m_img.format)
+                        .arg(sourceName, m_img.format)
                         .arg(Spectrum512::kRows)
                         .arg(uniq.size()));
     m_lineSpin->setEnabled(true);
+    m_exportBtn->setEnabled(true);
     setLine(100);
 }
 

@@ -1,5 +1,9 @@
 #include "Spectrum512.h"
 
+#include <algorithm>
+#include <array>
+#include <climits>
+
 #include "model/Palette.h"
 
 namespace Spectrum512 {
@@ -156,6 +160,153 @@ Image parseSpc(const QByteArray &bytes)
 QRgb decodeStColour(quint16 w)
 {
     return Palette::decode(w).rgb();
+}
+
+namespace {
+// Quantise a channel (0..255) to the nearest ST 3-bit gun level, returning 0..7.
+int nearestGun(int v)
+{
+    int best = 0, bestDist = INT_MAX;
+    for (int n = 0; n < 8; ++n) {
+        const int d = std::abs(Palette::gun(n) - v);
+        if (d < bestDist) {
+            bestDist = d;
+            best = n;
+        }
+    }
+    return best;
+}
+
+quint16 encStColour(int r, int g, int b)
+{
+    return (nearestGun(r) << 8) | (nearestGun(g) << 4) | nearestGun(b);
+}
+}   // namespace
+
+Image convertImage(const QImage &src)
+{
+    Image img;
+    img.format = QStringLiteral("converted");
+    const QImage s = src.convertToFormat(QImage::Format_RGB32)
+                         .scaled(kWidth, kRows, Qt::IgnoreAspectRatio,
+                                 Qt::SmoothTransformation);
+    img.linePalettes.resize(kRows);
+    img.rawIndex.resize(kRows);
+
+    for (int row = 0; row < kRows; ++row) {
+        const QRgb *tgt = reinterpret_cast<const QRgb *>(s.constScanLine(row));
+        auto &pal = img.linePalettes[row];
+
+        // Init each of the 48 slots from the mean target colour over the x-range
+        // where that (set, register) is actually shown.
+        for (int set = 0; set < 3; ++set) {
+            for (int c = 0; c < 16; ++c) {
+                const int t = switchColumn(c);
+                int x0 = 0, x1 = 0;
+                if (set == 0) { x0 = 0; x1 = std::max(1, t); }
+                else if (set == 1) { x0 = t; x1 = t + 160; }
+                else { x0 = t + 160; x1 = kWidth; }
+                x0 = std::clamp(x0, 0, kWidth);
+                x1 = std::clamp(x1, 0, kWidth);
+                long rr = 0, gg = 0, bb = 0, n = 0;
+                for (int x = x0; x < x1; ++x) {
+                    rr += qRed(tgt[x]); gg += qGreen(tgt[x]); bb += qBlue(tgt[x]); ++n;
+                }
+                pal[set * 16 + c] = n ? encStColour(rr / n, gg / n, bb / n) : 0;
+            }
+        }
+
+        std::array<QRgb, kColoursPerLine> dpal;
+        auto refresh = [&] { for (int i = 0; i < kColoursPerLine; ++i) dpal[i] = decodeStColour(pal[i]); };
+        refresh();
+
+        // Lloyd's: alternate index assignment and slot-colour update.
+        std::array<int, kWidth> idx{};
+        for (int it = 0; it < 6; ++it) {
+            for (int x = 0; x < kWidth; ++x) {
+                const int tr = qRed(tgt[x]), tg = qGreen(tgt[x]), tb = qBlue(tgt[x]);
+                int best = 0; long bestD = LONG_MAX;
+                for (int c = 0; c < 16; ++c) {
+                    const QRgb dp = dpal[findIndex(x, c)];
+                    const long d = long(qRed(dp) - tr) * (qRed(dp) - tr)
+                                   + long(qGreen(dp) - tg) * (qGreen(dp) - tg)
+                                   + long(qBlue(dp) - tb) * (qBlue(dp) - tb);
+                    if (d < bestD) { bestD = d; best = c; }
+                }
+                idx[x] = best;
+            }
+            std::array<long, kColoursPerLine> ar{}, ag{}, ab{}, an{};
+            for (int x = 0; x < kWidth; ++x) {
+                const int sl = findIndex(x, idx[x]);
+                ar[sl] += qRed(tgt[x]); ag[sl] += qGreen(tgt[x]); ab[sl] += qBlue(tgt[x]); ++an[sl];
+            }
+            for (int sl = 0; sl < kColoursPerLine; ++sl)
+                if (an[sl]) pal[sl] = encStColour(ar[sl] / an[sl], ag[sl] / an[sl], ab[sl] / an[sl]);
+            refresh();
+        }
+
+        // Final assignment with light error diffusion along the row (smooths gradients).
+        QByteArray &ri = img.rawIndex[row];
+        ri.resize(kWidth);
+        double er = 0, eg = 0, eb = 0;
+        for (int x = 0; x < kWidth; ++x) {
+            const double wr = qRed(tgt[x]) + er, wg = qGreen(tgt[x]) + eg, wb = qBlue(tgt[x]) + eb;
+            int best = 0; double bestD = 1e18;
+            for (int c = 0; c < 16; ++c) {
+                const QRgb dp = dpal[findIndex(x, c)];
+                const double d = (qRed(dp) - wr) * (qRed(dp) - wr)
+                                 + (qGreen(dp) - wg) * (qGreen(dp) - wg)
+                                 + (qBlue(dp) - wb) * (qBlue(dp) - wb);
+                if (d < bestD) { bestD = d; best = c; }
+            }
+            ri[x] = static_cast<char>(best);
+            const QRgb dp = dpal[findIndex(x, best)];
+            er = (wr - qRed(dp)) * 0.5;
+            eg = (wg - qGreen(dp)) * 0.5;
+            eb = (wb - qBlue(dp)) * 0.5;
+        }
+    }
+
+    // Build the display image from the chosen palettes + indices.
+    img.rgb = QImage(kWidth, kRows + 1, QImage::Format_RGB32);
+    img.rgb.fill(qRgb(0, 0, 0));
+    for (int row = 0; row < kRows; ++row) {
+        QRgb *scan = reinterpret_cast<QRgb *>(img.rgb.scanLine(row + 1));
+        for (int x = 0; x < kWidth; ++x)
+            scan[x] = decodeStColour(
+                img.linePalettes[row][findIndex(x, static_cast<quint8>(img.rawIndex[row][x]))]);
+    }
+    img.valid = true;
+    return img;
+}
+
+QByteArray encodeSpu(const Image &img)
+{
+    QByteArray out(kSpuBytes, '\0');
+    if (!img.valid || img.rawIndex.size() != kRows || img.linePalettes.size() != kRows)
+        return out;
+    constexpr int kPad = 160;
+    for (int row = 0; row < kRows; ++row) {
+        for (int x = 0; x < kWidth; ++x) {
+            const int c = static_cast<quint8>(img.rawIndex[row][x]);
+            const int byte = x >> 3, bit = 7 - (x & 7);
+            for (int p = 0; p < 4; ++p)
+                if ((c >> p) & 1) {
+                    const int off = kPad + p * kPlaneBytes + row * kPlaneStride + byte;
+                    out[off] = out[off] | static_cast<char>(1 << bit);
+                }
+        }
+    }
+    const int palBase = kPad + kBitmapBytes;
+    for (int row = 0; row < kRows; ++row) {
+        for (int sl = 0; sl < kColoursPerLine; ++sl) {
+            const quint16 w = img.linePalettes[row][sl];
+            const int o = palBase + (row * kColoursPerLine + sl) * 2;
+            out[o] = static_cast<char>(w >> 8);
+            out[o + 1] = static_cast<char>(w & 0xff);
+        }
+    }
+    return out;
 }
 
 Image parse(const QByteArray &bytes)

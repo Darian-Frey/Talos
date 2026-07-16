@@ -12,6 +12,7 @@
 
 class QLabel;
 class QSpinBox;
+class QPushButton;
 
 // Paints the palette storm for one scanline: the 3x16 colour sets, the resolved
 // 320px line, and tick marks where each register flips set1->set2 (and +160 to
@@ -41,7 +42,10 @@ protected:
     void resizeEvent(QResizeEvent *) override;   // rescale the picture to fit
 
 private:
-    void importSpu();
+    void importSpu();                                      // load a real .SPU/.SPC
+    void importImage();                                    // load any image, convert to S512
+    void exportSpu();                                      // save the current image as .SPU
+    void presentImage(const QString &sourceName);          // show m_img (shared)
     void setLine(int line);
     void updatePicture();                                  // scale image to m_picture
     bool eventFilter(QObject *obj, QEvent *ev) override;   // click the picture
@@ -52,4 +56,5 @@ private:
     StormStrip *m_storm = nullptr;
     QLabel *m_info = nullptr;
     QLabel *m_lineInfo = nullptr;
+    QPushButton *m_exportBtn = nullptr;
 };

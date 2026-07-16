@@ -75,6 +75,16 @@ struct Image
 // .SPU (uncompressed, 51104 bytes). On failure returns {valid=false, error=…}.
 Image parse(const QByteArray &bytes);
 
+// Convert an arbitrary image (any format Qt can load) into a Spectrum 512 picture
+// by quantising it to the S512 constraint (48 position-dependent colours/line via
+// a per-scanline Lloyd's pass + light dithering). Detailed/colourful images come
+// out well; smooth gradients band — that is S512's inherent limit, not a bug.
+Image convertImage(const QImage &src);
+
+// Encode a decoded/converted Image back to .SPU bytes (51104) — a "Talos-usable"
+// file that parse() re-reads. Used by the viewer's Export .SPU.
+QByteArray encodeSpu(const Image &img);
+
 // Decode one ST $0rgb palette word to an RGB colour (3 bits/gun), matching the
 // client's Palette decode.
 QRgb decodeStColour(quint16 word);
