@@ -11,6 +11,7 @@
 #include "view/RasterWorkspace.h"
 #include "view/ScrollerWorkspace.h"
 #include "view/Spectrum512View.h"
+#include "view/StPictureView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -325,6 +326,12 @@ void MainWindow::buildUi()
     auto *spectrumDock = new CollapsibleDock(QStringLiteral("Spectrum 512"), m_spectrum, this);
     addDockWidget(Qt::BottomDockWidgetArea, spectrumDock);
     tabifyDockWidget(tdock, spectrumDock);
+
+    // ST picture viewer (F-211 / Phase 6): import DEGAS / NEOchrome pictures.
+    m_stPicture = new StPictureView(this);
+    auto *stPicDock = new CollapsibleDock(QStringLiteral("ST picture"), m_stPicture, this);
+    addDockWidget(Qt::BottomDockWidgetArea, stPicDock);
+    tabifyDockWidget(tdock, stPicDock);
 
     tdock->raise();   // timeline shown first
 

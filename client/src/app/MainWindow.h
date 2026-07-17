@@ -25,6 +25,7 @@ class DmaSoundView;
 class RasterWorkspace;
 class ScrollerWorkspace;
 class Spectrum512View;
+class StPictureView;
 class LedToolButton;
 class CaptureController;
 class QProcess;
@@ -132,6 +133,7 @@ private:
     RasterWorkspace *m_raster = nullptr;
     ScrollerWorkspace *m_scroller = nullptr;
     Spectrum512View *m_spectrum = nullptr;
+    StPictureView *m_stPicture = nullptr;
     QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG
     QTemporaryDir m_scrollerDir;          // holds the generated scroller .s + AUTO/SCROLLER.PRG
     QProcess *m_rasterProc = nullptr;     // vasm / verify subprocess (one at a time)

@@ -179,6 +179,7 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 - **Scroller workspace** — author an STE hardware fine-scroll scroller (§7).
 - **Spectrum 512** — import/convert a 512-colour picture and visualise its
   per-scanline palette storm (§7a).
+- **ST picture** — view DEGAS / NEOchrome / Tiny pictures (§7b).
 
 ---
 
@@ -280,6 +281,25 @@ spinner, to inspect it) and the **palette storm** for the selected line — the
 resolved scanline, where each of the 16 registers flips set 1 → set 2 (at
 `x = 1,5,21,25,…`) and set 2 → set 3 (160 px later) across the beam, and the three
 16-colour palette sets. Sample pictures are user-supplied (copyright, like TOS).
+
+---
+
+## 7b. ST pictures (ST picture tab)
+
+The **ST picture** tab views the classic 16-colour ST picture formats — one
+palette per screen, unlike the Spectrum 512 palette storm. **Import ST picture…**
+loads and decodes:
+
+- **DEGAS** — `.PI1/.PI2/.PI3` (uncompressed) and `.PC1/.PC2/.PC3` (Degas Elite,
+  PackBits-compressed).
+- **NEOchrome** — `.NEO`.
+- **Tiny** — `.TNY/.TN1/.TN2/.TN3` (RLE-compressed).
+
+All three ST resolutions decode: low (320×200, 16 colours), medium (640×200 → 400
+for correct aspect, 4 colours) and high (640×400, mono). The decoded picture is
+shown scaled to fit, with the file's palette as swatches below. The decoders were
+validated pixel-for-pixel against the canonical RECOIL decoder. Sample pictures
+are user-supplied (copyright).
 
 ---
 
