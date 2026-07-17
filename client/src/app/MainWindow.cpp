@@ -33,14 +33,20 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QHeaderView>
+#include <algorithm>
+
+#include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
+#include <QSlider>
 #include <QSpinBox>
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
+#include <QVBoxLayout>
 
 namespace {
 constexpr int kLiveIntervalMs = 70;    // ~14 Hz live refresh — each tick does a
@@ -282,8 +288,50 @@ void MainWindow::buildUi()
     connect(m_timeline, &QTableWidget::currentCellChanged, this,
             [this](int row, int, int, int) { onTimelineRowChanged(row); });
 
+    // Per-frame scrubber (Phase 6): drag the cursor through the captured frame and
+    // watch the beam sweep and the register writes light up as it passes them.
+    auto *scrubBar = new QWidget(this);
+    auto *sl = new QHBoxLayout(scrubBar);
+    sl->setContentsMargins(4, 2, 4, 2);
+    m_scrubPlay = new QToolButton(scrubBar);
+    m_scrubPlay->setText(QStringLiteral("▶"));
+    m_scrubPlay->setCheckable(true);
+    m_scrubPlay->setEnabled(false);
+    m_scrubPlay->setToolTip(QStringLiteral("Play — sweep the beam through the frame"));
+    sl->addWidget(m_scrubPlay);
+    m_scrub = new QSlider(Qt::Horizontal, scrubBar);
+    m_scrub->setEnabled(false);
+    m_scrub->setToolTip(QStringLiteral(
+        "Scrub the beam through the captured frame — writes light up as it passes them"));
+    sl->addWidget(m_scrub, 1);
+    m_scrubInfo = new QLabel(scrubBar);
+    m_scrubInfo->setMinimumWidth(240);
+    sl->addWidget(m_scrubInfo);
+
+    m_scrubTimer = new QTimer(this);
+    m_scrubTimer->setInterval(30);
+    connect(m_scrubTimer, &QTimer::timeout, this, [this] {
+        const int step = std::max(1, m_scrub->maximum() / 60);   // ~1.8 s frame sweep
+        const int v = m_scrub->value() + step;
+        if (v >= m_scrub->maximum()) {
+            m_scrub->setValue(m_scrub->maximum());
+            m_scrubPlay->setChecked(false);   // toggled() stops the timer
+        } else {
+            m_scrub->setValue(v);
+        }
+    });
+    connect(m_scrub, &QSlider::valueChanged, this, &MainWindow::onScrub);
+    connect(m_scrubPlay, &QToolButton::toggled, this, &MainWindow::toggleScrubPlay);
+
+    auto *tlContainer = new QWidget(this);
+    auto *tl = new QVBoxLayout(tlContainer);
+    tl->setContentsMargins(0, 0, 0, 0);
+    tl->setSpacing(2);
+    tl->addWidget(scrubBar);
+    tl->addWidget(m_timeline, 1);
+
     auto *tdock =
-        new CollapsibleDock(QStringLiteral("Register-write timeline"), m_timeline, this);
+        new CollapsibleDock(QStringLiteral("Register-write timeline"), tlContainer, this);
     addDockWidget(Qt::BottomDockWidgetArea, tdock);
 
     // Blitter memory-traffic view (F-208, B2): tabbed alongside the timeline.
@@ -429,6 +477,7 @@ void MainWindow::doStop()
     m_fb->setWriteMarks({});
     m_writes.clear();
     m_timeline->setRowCount(0);
+    setupScrub();
     setRunningControlsEnabled(false);
     m_connLabel->setText(QStringLiteral("stopped"));
     updateLaunchStopState();
@@ -541,6 +590,7 @@ void MainWindow::relaunch()
     m_fb->setWriteMarks({});
     m_writes.clear();
     m_timeline->setRowCount(0);
+    setupScrub();
     setRunningControlsEnabled(false);
     onStartClicked();
 }
@@ -780,19 +830,35 @@ void MainWindow::refreshScreen()
     });
 }
 
+int MainWindow::cyclesPerLine() const
+{
+    return m_region == VideoRegion::Ntsc60 ? 508 : 512;   // C-007
+}
+
 bool MainWindow::updateBeamOverlay(QSize frameSize)
 {
     const auto scanline = m_state.hbl();
     const auto cycle = m_state.lineCycles();
-    BeamMarker mk;
     if (!scanline || !cycle || frameSize.isEmpty()) {
-        m_fb->setBeam(mk);   // valid == false: nothing to draw
+        m_fb->setBeam(BeamMarker{});   // valid == false: nothing to draw
         return false;
     }
+    return showBeamAt(static_cast<int>(*scanline), static_cast<int>(*cycle), frameSize);
+}
 
+// Draw the beam marker at an explicit (scanline, cycle-in-line). Shared by the
+// live overlay and the frame scrubber.
+bool MainWindow::showBeamAt(int scanline, int cycleInLine, QSize frameSize,
+                            const QString &prefix)
+{
+    BeamMarker mk;
+    if (frameSize.isEmpty()) {
+        m_fb->setBeam(mk);
+        return false;
+    }
     const BeamGeometry geo(m_region, frameSize);
-    const BeamMapping bm = geo.map(static_cast<int>(*scanline), static_cast<int>(*cycle));
-    const QString pos = QStringLiteral("HBL %1 · cyc %2").arg(*scanline).arg(*cycle);
+    const BeamMapping bm = geo.map(scanline, cycleInLine);
+    const QString pos = prefix + QStringLiteral("HBL %1 · cyc %2").arg(scanline).arg(cycleInLine);
 
     mk.valid = true;
     if (bm.yVisible) {
@@ -806,7 +872,6 @@ bool MainWindow::updateBeamOverlay(QSize frameSize)
             mk.label = pos + QStringLiteral("  (h-blank)");
         }
     } else {
-        // Beam above/below the rendered rows (e.g. after a break, at VBL).
         mk.vblank = true;
         mk.label = QStringLiteral("beam in blanking · ") + pos;
     }
@@ -910,6 +975,7 @@ void MainWindow::onCaptureClicked()
     m_highlightRow = -1;
     m_timeline->setRowCount(0);
     m_fb->setWriteMarks({});
+    setupScrub();
     setControlsEnabledForCapture(true);
     m_captureLabel->setStyleSheet(QString());
     m_captureLabel->setText(QStringLiteral("capture $%1: running…").arg(addr, 0, 16));
@@ -1476,6 +1542,7 @@ void MainWindow::onCaptureFinished(bool ok, const QString &reason)
 {
     m_writes = m_capture->events();
     populateTimeline();
+    setupScrub();
     setControlsEnabledForCapture(false);
     // Persist the result in the status bar so a 0-write timeout isn't easy to miss.
     const QString reg = QStringLiteral("$%1").arg(m_capture->address(), 0, 16);
@@ -1494,8 +1561,84 @@ void MainWindow::onCaptureFinished(bool ok, const QString &reason)
 
 void MainWindow::onTimelineRowChanged(int row)
 {
+    // With a scrubber armed, selecting a write moves the cursor to it (which
+    // draws the beam there and accumulates the writes up to it).
+    if (m_scrub->isEnabled() && row >= 0 && row < m_writes.size()) {
+        m_scrub->setValue(static_cast<int>(m_writes[row].frameCycle));
+        return;
+    }
     m_highlightRow = row;
     recomputeWriteMarks(m_fb->imageSize());
+}
+
+void MainWindow::setupScrub()
+{
+    m_scrubPlay->setChecked(false);
+    if (m_writes.isEmpty()) {
+        m_scrub->setEnabled(false);
+        m_scrubPlay->setEnabled(false);
+        m_scrubCycle = -1;
+        m_scrubInfo->clear();
+        return;
+    }
+    const int cpl = cyclesPerLine();
+    int maxFc = 0;
+    for (const WriteEvent &w : m_writes)
+        maxFc = std::max(maxFc, static_cast<int>(w.frameCycle));
+    const int smax = (maxFc / cpl + 2) * cpl;   // a couple of lines past the last write
+
+    const QSignalBlocker block(m_scrub);
+    m_scrub->setRange(0, smax);
+    m_scrub->setSingleStep(cpl);
+    m_scrub->setPageStep(cpl * 8);
+    m_scrub->setValue(smax);            // default: whole frame shown
+    m_scrub->setEnabled(true);
+    m_scrubPlay->setEnabled(true);
+    m_scrubCycle = smax;                // all writes visible until the user scrubs
+    m_scrubInfo->setText(QStringLiteral("%1 writes over %2 lines — drag to scrub, ▶ to play")
+                             .arg(m_writes.size())
+                             .arg(maxFc / cpl + 1));
+}
+
+void MainWindow::onScrub(int frameCycle)
+{
+    m_scrubCycle = frameCycle;
+    const int cpl = cyclesPerLine();
+    const int line = frameCycle / cpl;
+    const int cil = frameCycle % cpl;
+    const QSize fs = m_fb->imageSize();
+
+    showBeamAt(line, cil, fs, QStringLiteral("scrub · "));
+
+    // The current write is the latest one the beam has reached.
+    int seen = 0, last = -1;
+    for (int i = 0; i < m_writes.size(); ++i)
+        if (static_cast<int>(m_writes[i].frameCycle) <= frameCycle) {
+            ++seen;
+            last = i;
+        }
+    m_highlightRow = last;
+    recomputeWriteMarks(fs);
+
+    QString info = QStringLiteral("line %1 · cyc %2 · %3/%4 writes")
+                       .arg(line).arg(cil).arg(seen).arg(m_writes.size());
+    if (last >= 0)
+        info += QStringLiteral(" · last $%1=$%2")
+                    .arg(m_writes[last].address, 0, 16)
+                    .arg(m_writes[last].value, 0, 16);
+    m_scrubInfo->setText(info);
+}
+
+void MainWindow::toggleScrubPlay(bool on)
+{
+    m_scrubPlay->setText(on ? QStringLiteral("⏸") : QStringLiteral("▶"));
+    if (on && m_scrub->isEnabled()) {
+        if (m_scrub->value() >= m_scrub->maximum())
+            m_scrub->setValue(0);   // restart the sweep from the top of the frame
+        m_scrubTimer->start();
+    } else {
+        m_scrubTimer->stop();
+    }
 }
 
 void MainWindow::recomputeWriteMarks(QSize frameSize)
@@ -1509,6 +1652,9 @@ void MainWindow::recomputeWriteMarks(QSize frameSize)
     marks.reserve(m_writes.size());
     for (int i = 0; i < m_writes.size(); ++i) {
         const WriteEvent &w = m_writes[i];
+        // While scrubbing, only show writes the beam has already reached.
+        if (m_scrubCycle >= 0 && static_cast<int>(w.frameCycle) > m_scrubCycle)
+            continue;
         const auto px = geo.toPixel(w.scanline, w.cycleInLine);
         if (!px)
             continue;   // write landed in blanking — not on the rendered frame

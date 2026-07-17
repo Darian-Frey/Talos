@@ -34,6 +34,8 @@ class QAction;
 class QTableWidget;
 class QLabel;
 class QTimer;
+class QSlider;
+class QToolButton;
 class QSpinBox;
 class QLineEdit;
 class QComboBox;
@@ -102,6 +104,8 @@ private slots:
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
     void onTimelineRowChanged(int row);
+    void onScrub(int frameCycle);          // move the cursor through the captured frame
+    void toggleScrubPlay(bool on);         // auto-sweep the beam through the frame
 
 private:
     void buildUi();
@@ -119,9 +123,12 @@ private:
     void checkBootFastForward(); // BUG-007: turn off boot fast-forward once the effect runs
     void endBootFastForward(const QString &why);
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
+    bool showBeamAt(int scanline, int cycleInLine, QSize frameSize, const QString &prefix = {});
     void recomputeWriteMarks(QSize frameSize);
     void populateTimeline();
+    void setupScrub();          // arm the scrubber for the just-captured frame
     void setControlsEnabledForCapture(bool capturing);
+    int cyclesPerLine() const;  // 512 PAL / 508 NTSC
 
     Config m_config;
     RdbClient *m_rdb = nullptr;
@@ -187,4 +194,10 @@ private:
     CaptureController *m_capture = nullptr;
     QVector<WriteEvent> m_writes;   // last captured register writes
     int m_highlightRow = -1;        // selected timeline row -> highlighted marker
+
+    QSlider *m_scrub = nullptr;       // scrub the beam through the captured frame
+    QToolButton *m_scrubPlay = nullptr;
+    QLabel *m_scrubInfo = nullptr;
+    QTimer *m_scrubTimer = nullptr;
+    int m_scrubCycle = -1;            // cursor frame-cycle; -1 = not scrubbing (show all)
 };

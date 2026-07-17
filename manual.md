@@ -172,7 +172,9 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 
 - **Register-write timeline** — the result of a **Capture**: each write to the
   watched register with its beam position; selecting a row highlights that marker
-  on the framebuffer.
+  on the framebuffer. A **scrub bar** across the top drags a cursor through the
+  captured frame — the beam sweeps to the cursor and the writes light up as it
+  reaches them (▶ plays the sweep). See §5, "Replay a frame in time".
 - **Blitter traffic** — the F-208 Blitter trace.
 - **DMA sound / EQ** — the F-209 DMA-sound drain + LMC1992 EQ view.
 - **Raster workspace** — author raster-bar / vertical-band effects (§6).
@@ -192,6 +194,14 @@ inspect, **Refresh** to re-pull while paused.
 **See where a register write lands.** Put the register in **Reg $** (e.g. a
 palette register `ffff8240`), set a count, hit **Capture**. Read the
 **Register-write timeline** and click rows to see each write's beam marker.
+
+**Replay a frame in time (scrubber).** After a capture, drag the **scrub bar** at
+the top of the **Register-write timeline** tab: a cursor moves through the frame,
+the beam sweeps to it, and each register write lights up on the framebuffer as the
+beam reaches it (with the current write highlighted and a live line/cycle
+readout). Press **▶** to play the sweep automatically; clicking a timeline row
+jumps the cursor to that write. This makes the *order* an effect builds its frame
+in directly visible.
 
 **Park the beam on a scanline.** Set **Line**, hit **Run→Line**.
 
