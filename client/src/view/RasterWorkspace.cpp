@@ -75,8 +75,13 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     });
     connect(del, &QPushButton::clicked, this, [this] {
         const int r = m_table->currentRow();
-        if (r >= 0) m_table->removeRow(r);
+        if (r >= 0) {
+            m_table->removeRow(r);
+            emit contentChanged();
+        }
     });
+    // Any cell edit / added row changes the effect; mode changes below too.
+    connect(m_table, &QTableWidget::cellChanged, this, &RasterWorkspace::contentChanged);
     connect(build, &QPushButton::clicked, this,
             [this] { emit buildRequested(bars()); });
     connect(verify, &QPushButton::clicked, this,
@@ -97,6 +102,7 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
                                          "frame to place bands (max %1).").arg(RasterCodegen::kMaxBands)
                         : QString(),
                   true);
+        emit contentChanged();
     });
 
     // Seed with a rainbow so the workspace is usable immediately.

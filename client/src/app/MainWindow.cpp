@@ -12,6 +12,7 @@
 #include "view/ScrollerWorkspace.h"
 #include "view/Spectrum512View.h"
 #include "view/StPictureView.h"
+#include "view/ScanlineBudgetView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -356,6 +357,15 @@ void MainWindow::buildUi()
     connect(m_raster, &RasterWorkspace::verifyRequested, this, &MainWindow::verifyRasterEffect);
     connect(m_raster, &RasterWorkspace::exportRequested, this, &MainWindow::exportRasterEffect);
     connect(m_raster, &RasterWorkspace::importRequested, this, &MainWindow::importRasterEffect);
+    connect(m_raster, &RasterWorkspace::contentChanged, this, &MainWindow::updateBudget);
+
+    // Per-scanline cycle-budget gauge (Phase 6): shows how much of a line's cycle
+    // budget the authored effect uses, and the 8/16 MHz Mega STE budgets (F-210).
+    m_budget = new ScanlineBudgetView(this);
+    auto *budgetDock = new CollapsibleDock(QStringLiteral("Cycle budget"), m_budget, this);
+    addDockWidget(Qt::BottomDockWidgetArea, budgetDock);
+    tabifyDockWidget(tdock, budgetDock);
+    updateBudget();   // seed from the workspace's initial (rainbow) bars
 
     // STE hardware fine-scroll message scroller (F-212, Phase 4).
     m_scroller = new ScrollerWorkspace(this);
@@ -531,6 +541,7 @@ void MainWindow::onMachineChanged(int index)
         return;
     m_machine = machines[index];
     updateCapabilities();
+    updateBudget();      // dual-speed machines get the 16 MHz budget line
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -539,6 +550,7 @@ void MainWindow::onRegionChanged(int index)
 {
     m_region = (index == 1) ? VideoRegion::Ntsc60 : VideoRegion::Pal50;
     reconcileRegion();   // a language with no NTSC variant snaps back to PAL
+    updateBudget();      // 512 (PAL) vs 508 (NTSC) cycles/line
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -1355,7 +1367,7 @@ void MainWindow::buildScrollerEffect(const QString &message, int speed)
         m_scroller->setResult(QStringLiteral("could not write scroller.s"), false);
         return;
     }
-    f.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    f.write(ScrollerCodegen::generate(message, speed, ScrollerCodegen::kDefaultVScale, m_scroller->font()).toUtf8());
     f.close();
 
     m_scroller->setBusy(true);
@@ -1414,7 +1426,7 @@ void MainWindow::verifyScrollerEffect(const QString &message, int speed)
         m_scroller->setResult(QStringLiteral("could not write scroller.s"), false);
         return;
     }
-    sf.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    sf.write(ScrollerCodegen::generate(message, speed, ScrollerCodegen::kDefaultVScale, m_scroller->font()).toUtf8());
     sf.close();
 
     if (m_launcher->isRunning() || m_rdb->isConnected())
@@ -1459,7 +1471,7 @@ void MainWindow::exportScrollerEffect(const QString &message, int speed)
         m_scroller->setResult(QStringLiteral("could not write to %1").arg(dir), false);
         return;
     }
-    s.write(ScrollerCodegen::generate(message, speed).toUtf8());
+    s.write(ScrollerCodegen::generate(message, speed, ScrollerCodegen::kDefaultVScale, m_scroller->font()).toUtf8());
     s.close();
 
     // 2. The portable sequence form: the STE fine-scroll register + message/speed.
@@ -1686,6 +1698,54 @@ void MainWindow::populateTimeline()
         put(4, QStringLiteral("$%1").arg(w.value, 0, 16), &c);
         put(5, QStringLiteral("$%1").arg(w.pc, 0, 16));
     }
+}
+
+void MainWindow::updateBudget()
+{
+    if (!m_budget || !m_raster)
+        return;
+    ScanlineBudgetView::Model m;
+    m.valid = true;
+    m.cyclesPerLine = cyclesPerLine();                       // 512 PAL / 508 NTSC (sourced)
+    m.dualSpeed = Machines::info(m_machine).dualSpeed;       // Mega STE -> 16 MHz doubling
+
+    QSize fs = m_fb ? m_fb->imageSize() : QSize();
+    if (fs.isEmpty())
+        fs = QSize(832, 552);                               // default PAL low-res taken frame
+    const BeamGeometry geo(m_region, fs);
+    m.visibleStart = geo.cycleAtX(0);
+    m.visibleEnd = geo.cycleAtX(fs.width());
+
+    if (m_raster->mode() == RasterWorkspace::Bands) {
+        // Each band boundary is a palette write; place it on the line via the
+        // sourced column->cycle geometry (band.line holds a framebuffer column).
+        const QVector<RasterCodegen::Bar> cols = m_raster->columnBars();
+        int over = 0;
+        for (const RasterCodegen::Bar &b : cols) {
+            const int c = geo.cycleAtX(b.line);
+            m.writeCycles.append(c);
+            if (c > m.visibleEnd)
+                ++over;
+        }
+        m.note = QStringLiteral("Bands: %1 palette writes/line (max %2)")
+                     .arg(cols.size())
+                     .arg(RasterCodegen::kMaxBands);
+        if (over)
+            m.note += QStringLiteral(" — %1 past the visible edge").arg(over);
+        m.note += QStringLiteral(" · %1 cyc/line @ 8 MHz").arg(m.cyclesPerLine);
+        if (m.dualSpeed)
+            m.note += QStringLiteral(", %1 @ 16 MHz").arg(m.cyclesPerLine * 2);
+    } else {
+        // Raster bars: one palette write at each line's start; the codegen pads
+        // the rest so every line is exactly kCycPerLine — cycle-locked, no overflow.
+        m.writeCycles.append(m.visibleStart);
+        m.note = QStringLiteral("Raster bars: 1 write/line, cycle-locked to %1 (codegen pad) · %2 bars")
+                     .arg(RasterCodegen::kCycPerLine)
+                     .arg(m_raster->bars().size());
+        if (m.dualSpeed)
+            m.note += QStringLiteral(" · Mega STE: double the per-line budget at 16 MHz");
+    }
+    m_budget->setModel(m);
 }
 
 void MainWindow::setControlsEnabledForCapture(bool capturing)

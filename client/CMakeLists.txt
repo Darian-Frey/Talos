@@ -32,6 +32,7 @@ add_executable(talos
   src/view/ScrollerWorkspace.cpp
   src/view/Spectrum512View.cpp
   src/view/StPictureView.cpp
+  src/view/ScanlineBudgetView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

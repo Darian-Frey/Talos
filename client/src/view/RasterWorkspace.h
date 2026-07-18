@@ -42,6 +42,7 @@ signals:
     void verifyRequested(const QVector<RasterCodegen::Bar> &bars);
     void exportRequested(const QVector<RasterCodegen::Bar> &bars);
     void importRequested();
+    void contentChanged();   // the bar/band list or mode changed (for the budget gauge)
 
 private:
     void addBar(int line, quint16 colour);

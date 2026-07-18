@@ -1,6 +1,7 @@
 #include "ScrollerCodegen.h"
 
 #include <QChar>
+#include <QImage>
 #include <QStringList>
 #include <QVector>
 
@@ -84,42 +85,108 @@ const Glyph kFont[] = {
 {'/', {"     X", "    X ", "   X  ", "  X   ", " X    ", "X     ", "      ", "      "}},
 };
 
-const Glyph *findGlyph(QChar c)
-{
-    const QChar up = c.toUpper();
-    for (const Glyph &g : kFont)
-        if (g.ch == up)
-            return &g;
-    return nullptr;   // space / unknown -> blank
-}
-
 // Blank columns before and after the message so it enters and leaves cleanly.
 constexpr int kLeadCols = kVisibleCols;    // one screen-width of blank lead-in
 constexpr int kTailCols = kVisibleCols;
 
 }   // namespace
 
-bool isRenderable(QChar c)
+bool Font::renderable(QChar c) const
 {
-    return c == ' ' || findGlyph(c) != nullptr;
+    return c == ' ' || glyphs.contains(caseFold ? c.toUpper() : c);
 }
 
-int stripColumns(const QString &message)
+bool Font::pixel(QChar c, int gx, int gy) const
 {
-    const int textPx = message.length() * kFontW;
+    const auto it = glyphs.constFind(caseFold ? c.toUpper() : c);
+    if (it == glyphs.constEnd() || gx < 0 || gx >= w || gy < 0 || gy >= h)
+        return false;
+    return it->at(gy * w + gx);
+}
+
+const Font &builtinFont()
+{
+    static const Font f = [] {
+        Font font;
+        font.w = kFontW;
+        font.h = kFontH;
+        font.caseFold = true;
+        font.label = QStringLiteral("built-in 8×8");
+        for (const Glyph &g : kFont) {
+            QVector<bool> bits(kFontW * kFontH, false);
+            for (int gy = 0; gy < kFontH; ++gy) {
+                const char *row = g.rows[gy];
+                for (int gx = 0; gx < kFontW && row[gx]; ++gx)
+                    bits[gy * kFontW + gx] = (row[gx] == 'X');
+            }
+            font.glyphs.insert(g.ch, bits);
+        }
+        return font;
+    }();
+    return f;
+}
+
+Font fontFromImage(const QImage &img, int cellW, int cellH, QChar firstChar)
+{
+    Font font;
+    font.w = qMax(1, cellW);
+    font.h = qMax(1, cellH);
+    font.caseFold = false;
+    if (img.isNull() || cellW < 1 || cellH < 1)
+        return font;
+
+    const QImage im = img.convertToFormat(QImage::Format_RGB32);
+    const int cols = im.width() / cellW;
+    const int rows = im.height() / cellH;
+    // The top-left pixel is the background; a pixel is foreground if it differs.
+    const QRgb bg = im.pixel(0, 0);
+    const int bgLum = qGray(bg);
+    auto fg = [&](QRgb p) { return qAbs(qGray(p) - bgLum) > 64; };
+
+    ushort code = firstChar.unicode();
+    int nonBlank = 0;
+    for (int r = 0; r < rows; ++r) {
+        for (int c = 0; c < cols; ++c, ++code) {
+            QVector<bool> bits(cellW * cellH, false);
+            bool any = false;
+            for (int gy = 0; gy < cellH; ++gy)
+                for (int gx = 0; gx < cellW; ++gx)
+                    if (fg(im.pixel(c * cellW + gx, r * cellH + gy))) {
+                        bits[gy * cellW + gx] = true;
+                        any = true;
+                    }
+            if (any) {   // keep only glyphs with ink (blank cells render as space)
+                font.glyphs.insert(QChar(code), bits);
+                ++nonBlank;
+            }
+        }
+    }
+    font.label = QStringLiteral("custom %1×%2 (%3 glyphs)").arg(cellW).arg(cellH).arg(nonBlank);
+    return font;
+}
+
+bool isRenderable(QChar c, const Font &font)
+{
+    return font.renderable(c);
+}
+
+int stripColumns(const QString &message, const Font &font)
+{
+    const int textPx = message.length() * font.w;
     const int totalPx = (kLeadCols + kTailCols) * 16 + textPx;
     return (totalPx + 15) / 16;   // round up to whole 16 px columns
 }
 
-QString generate(const QString &message, int speed, int vscale)
+QString generate(const QString &message, int speed, int vscale, const Font &font)
 {
     if (speed < 1) speed = 1;
     if (speed > 8) speed = 8;      // addq #n limit; keeps the wrap logic simple
     if (vscale < 1) vscale = 1;
-    const int bandH = kFontH * vscale;
+    const int fw = font.w, fh = font.h;
+    const int bandH = fh * vscale;
 
     // 1. Rasterise the message into a plane0 pixel bitmap, `bandH` rows tall.
-    const int textPx = message.length() * kFontW;
+    const int textPx = message.length() * fw;
     const int leadPx = kLeadCols * 16;
     const int totalPx = leadPx + textPx + kTailCols * 16;
     const int cols = (totalPx + 15) / 16;         // 16 px columns
@@ -128,19 +195,12 @@ QString generate(const QString &message, int speed, int vscale)
     // bit[y][x] set == foreground pixel.
     QVector<QVector<bool>> bits(bandH, QVector<bool>(wpx, false));
     for (int i = 0; i < message.length(); ++i) {
-        const Glyph *g = findGlyph(message[i]);
-        if (!g)
-            continue;   // space / unknown
-        const int x0 = leadPx + i * kFontW;
-        for (int gy = 0; gy < kFontH; ++gy) {
-            const char *row = g->rows[gy];
-            for (int gx = 0; gx < kFontW && row[gx]; ++gx) {
-                if (row[gx] != 'X')
-                    continue;
-                for (int sy = 0; sy < vscale; ++sy)
-                    bits[gy * vscale + sy][x0 + gx] = true;
-            }
-        }
+        const int x0 = leadPx + i * fw;
+        for (int gy = 0; gy < fh; ++gy)
+            for (int gx = 0; gx < fw; ++gx)
+                if (font.pixel(message[i], gx, gy))
+                    for (int sy = 0; sy < vscale; ++sy)
+                        bits[gy * vscale + sy][x0 + gx] = true;
     }
 
     // 2. Slice into 16 px columns, column-major (all band rows of col 0, then

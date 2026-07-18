@@ -26,6 +26,7 @@ class RasterWorkspace;
 class ScrollerWorkspace;
 class Spectrum512View;
 class StPictureView;
+class ScanlineBudgetView;
 class LedToolButton;
 class CaptureController;
 class QProcess;
@@ -126,6 +127,7 @@ private:
     bool showBeamAt(int scanline, int cycleInLine, QSize frameSize, const QString &prefix = {});
     void recomputeWriteMarks(QSize frameSize);
     void populateTimeline();
+    void updateBudget();        // recompute the per-scanline cycle-budget gauge
     void setupScrub();          // arm the scrubber for the just-captured frame
     void setControlsEnabledForCapture(bool capturing);
     int cyclesPerLine() const;  // 512 PAL / 508 NTSC
@@ -139,6 +141,7 @@ private:
     DmaSoundView *m_dmaView = nullptr;
     RasterWorkspace *m_raster = nullptr;
     ScrollerWorkspace *m_scroller = nullptr;
+    ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
     StPictureView *m_stPicture = nullptr;
     QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG

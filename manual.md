@@ -182,6 +182,8 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 - **Spectrum 512** — import/convert a 512-colour picture and visualise its
   per-scanline palette storm (§7a).
 - **ST picture** — view DEGAS / NEOchrome / Tiny pictures (§7b).
+- **Cycle budget** — the per-scanline CPU cycle budget for the authored raster /
+  bands effect, with the 8/16 MHz Mega STE budgets (§7c).
 
 ---
 
@@ -250,9 +252,18 @@ Controls:
 
 Open the **Scroller workspace** tab (STE-only effect — Build previews on STE/PAL).
 
-- **Message** — the text to scroll. Supports `A–Z 0–9` and `. , ! ? ' - : + /`
-  (lowercase is uppercased; unsupported glyphs render as blanks). The hint line
-  shows the character count and the resulting strip width in 16 px columns.
+- **Message** — the text to scroll. With the built-in font: `A–Z 0–9` and
+  `. , ! ? ' - : + /` (lowercase is uppercased; unsupported glyphs render as
+  blanks). The hint line shows the character count and the resulting strip width
+  in 16 px columns.
+- **Font** — the built-in 8×8, or **Import font…** to load a **font-sheet image**:
+  a grid of `cell`-width × `cell`-height glyphs, laid out row by row starting at
+  the **from** character. A pixel is ink if it differs from the top-left
+  (background) pixel, so white-on-black or black-on-white sheets both work, any
+  cell size. Blank cells become spaces; the current font is shown beside the
+  button. (The runnable `.PRG`/`.s` embed the rendered glyphs; a re-imported
+  `scroller.json` keeps only the message + speed, re-rendered with the current
+  font.)
 - **Speed** — scroll speed in **pixels per frame** (1 = smoothest, up to 8).
 - **Build & Run** — codegen → assemble → run on STE/PAL (live preview). The
   message is rasterised to a 1-bpp strip in Talos and scrolled by the STE shifter
@@ -310,6 +321,24 @@ for correct aspect, 4 colours) and high (640×400, mono). The decoded picture is
 shown scaled to fit, with the file's palette as swatches below. The decoders were
 validated pixel-for-pixel against the canonical RECOIL decoder. Sample pictures
 are user-supplied (copyright).
+
+---
+
+## 7c. Scanline cycle budget (Cycle budget tab)
+
+One ST scanline is a fixed number of CPU cycles — **512** at 8 MHz PAL 50 Hz
+(**508** NTSC), sourced from Hatari, never hand-counted. That is the budget for
+all of an effect's per-line work. The **Cycle budget** tab draws one scanline as a
+gauge and updates live as you edit the **Raster workspace**:
+
+- the **visible display** window is shaded (the border/blanking regions flank it);
+- the effect's per-line register writes are placed on the line — **green** inside
+  budget, **red** if a write falls past the visible edge (it won't show). Raster
+  **bars** are one write/line, cycle-locked to 512 by the codegen's pad; **bands**
+  plot each band boundary at its cycle position;
+- on a dual-speed **Mega STE**, the **16 MHz** budget (1024 cycles/line) is drawn
+  past the 8 MHz line — which is why an effect that overflows at 8 MHz can still
+  hold at 16 MHz (this is the F-210 dual-speed story, made concrete).
 
 ---
 

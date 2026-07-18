@@ -10,6 +10,8 @@
 #include <QString>
 #include <QWidget>
 
+#include "model/ScrollerCodegen.h"
+
 class QLineEdit;
 class QSpinBox;
 class QLabel;
@@ -22,6 +24,7 @@ public:
 
     QString message() const;
     int speed() const;
+    const ScrollerCodegen::Font &font() const { return m_font; }   // built-in or imported
     void loadFrom(const QString &message, int speed);   // register-sequence import
 
     void setBusy(bool busy);                 // disable actions during build/verify
@@ -35,10 +38,16 @@ signals:
 
 private:
     void refreshHint();   // live length/validity readout
+    void importFont();    // load a font-sheet image as the scroller font
 
     QLineEdit *m_message = nullptr;
     QSpinBox *m_speed = nullptr;
+    QSpinBox *m_cellW = nullptr;
+    QSpinBox *m_cellH = nullptr;
+    QLineEdit *m_firstChar = nullptr;
+    QLabel *m_fontLabel = nullptr;
     QLabel *m_hint = nullptr;
     QLabel *m_result = nullptr;
     QWidget *m_actions = nullptr;
+    ScrollerCodegen::Font m_font = ScrollerCodegen::builtinFont();
 };
