@@ -128,6 +128,12 @@ build/debug/bin/talos --machine ste --region pal --effect tests/effects/disk
 - **Live** — toggle the ~14 Hz live view. Each tick grabs a **tear-free** frame
   (it briefly fast-forwards to a frame boundary, screenshots the complete frame,
   then resumes real-time — BUG-009). On by default.
+- **● Rec** — record the live view to an **animated GIF**. Toggle **on** to start
+  (it turns Live on if it isn't), let the effect play, toggle **off** to choose
+  where to save. It captures the same tear-free coherent frames you see, at half
+  size (e.g. 416×276), looping forever, at roughly real-time cadence. ST content
+  is palette-indexed so colours are preserved exactly. Recording auto-stops (and
+  prompts to save) at 300 frames (~21 s); the status bar shows the running count.
 
 **Beam parking**
 - **Line** + **Run→Line** — run until the beam reaches the chosen scanline

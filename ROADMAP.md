@@ -85,23 +85,23 @@ Swap a bespoke cycle-exact core in behind the **same client protocol**, so the c
 
 **Tier 1 — closest to the mission (some already flagged):**
 
-- **Per-frame timeline scrubber.** Drag a cursor through one frame; every register write lights up at its scanline+cycle and the screen rebuilds up to that point. Extends the existing register-write capture + beam overlay.
+- **Per-frame timeline scrubber.** ✓ **Built.** Drag a cursor through one frame; every register write lights up at its scanline+cycle and the screen rebuilds up to that point. Extends the existing register-write capture + beam overlay.
 - **Border-removal walkthrough.** A guided view of each of the four ST borders (left/right/top/bottom): the exact sync/resolution write, the cycle window it must hit, and the border opening as a consequence — finishes M1's story, which the overlay covers only partially today.
 - **F-218 — reconstruct-from-registers view.** A second screen rebuilt *from the register writes*, beside Hatari's taken framebuffer, so you see *why* the picture looks as it does. Already registered; per D-007 it is secondary and never replaces F-202.
 - **Sync-scroll.** Author/visualise the sync-scroll trick — completes the "one production per hard trick" regression corpus alongside the four borders, Spectrum 512 and the STE hardware scroller.
 
 **Tier 2 — natural extensions of what's built:**
 
-- **More ST image formats** — Degas (`.PI1/.PC1`), NEOchrome (`.NEO`), Tiny (`.TNY`) — reusing the Spectrum 512 palette/decode plumbing (F-211).
+- **More ST image formats** — ✓ **Built.** Degas (`.PI1/.PC1`), NEOchrome (`.NEO`), Tiny (`.TNY`) — reusing the Spectrum 512 palette/decode plumbing (F-211).
 - **Live disassembly synced to the beam** — the 68k around PC (an effect's per-scanline loop) with *where each instruction lands on the beam*. hrdb has the raw pieces; Talos re-aims them at "this write happens here".
 - **MFP timer / interrupt visualisation** — Timer A–D configuration and when each interrupt fires on the beam (Timer-B drives Spectrum 512, HBL drives scrollers).
-- **Per-scanline cycle-budget meter** — cycles used vs the ~512-per-line budget for an authored effect, and where it overflows (ties to the Mega STE dual-speed view, F-210).
+- **Per-scanline cycle-budget meter** — ✓ **Built.** Cycles used vs the ~512-per-line budget for an authored effect, and where it overflows (ties to the Mega STE dual-speed view, F-210).
 
 **Tier 3 — presentation & interop:**
 
-- **Frame / GIF recorder** — capture the (now tear-free, BUG-009) live view to a clip for sharing an effect.
+- **Frame / GIF recorder** — ✓ **Built.** Capture the (now tear-free, BUG-009) live view to a looping animated GIF for sharing an effect — a self-contained GIF89a encoder (ST content is palette-indexed, so colours are preserved exactly).
 - **A/B machine comparison** — the same effect on two machines/regions side by side, highlighting where the STE prefetch shift breaks it (extends the F-207 differential).
-- **Custom font import for the scroller** — bring-your-own font (from an image) instead of the built-in 8×8 (F-212 scroller).
+- **Custom font import for the scroller** — ✓ **Built.** Bring-your-own font (from a font-sheet image) instead of the built-in 8×8 (F-212 scroller).
 
 **Housekeeping already on the books:**
 

@@ -23,6 +23,7 @@ add_executable(talos
   src/model/ScrollerCodegen.cpp
   src/model/Spectrum512.cpp
   src/model/StPicture.cpp
+  src/model/GifWriter.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp

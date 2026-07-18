@@ -12,6 +12,7 @@
 
 #include "model/Machine.h"
 #include "model/MachineState.h"
+#include "model/GifWriter.h"
 #include "model/RasterCodegen.h"
 #include "model/WriteEvent.h"
 #include "session/HatariLauncher.h"
@@ -86,6 +87,8 @@ private slots:
     void refresh();             // pull regs + a fresh framebuffer (one-off, machine stopped)
     void liveTick();            // live-timer tick: coherent frame grab while running
     void grabCoherentFrame();   // tear-free grab: fast-forward to a VBL, shot, resume
+    void toggleRecording(bool on);   // F-Phase6: record live frames -> animated GIF
+    void recordFrame(const QImage &raw);   // append a coherent frame while recording
     void doBreak();
     void doRun();
     void doStep();
@@ -168,6 +171,7 @@ private:
     QAction *m_actStep = nullptr;
     QAction *m_actRefresh = nullptr;
     QAction *m_actLive = nullptr;
+    QAction *m_actRecord = nullptr;
     QAction *m_actRunToLine = nullptr;
     QSpinBox *m_lineSpin = nullptr;
     QAction *m_actCapture = nullptr;
@@ -185,6 +189,8 @@ private:
 
     int m_refreshTick = 0;      // paces the rarely-changing reads (palette/region)
     bool m_grabbing = false;    // a coherent live grab is in flight (skip overlapping ticks)
+    bool m_recording = false;   // capturing live frames into m_gif
+    GifWriter m_gif;            // accumulates recorded frames; encoded on stop
     bool m_bootWatching = false;   // fast-forwarding boot, watching for the effect (BUG-007)
     int m_bootRamHits = 0;         // consecutive polls with PC stable in the effect's loop
     int m_bootPolls = 0;           // total watch polls (safety timeout)

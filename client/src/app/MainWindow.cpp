@@ -53,6 +53,8 @@ namespace {
 constexpr int kLiveIntervalMs = 70;    // ~14 Hz live refresh — each tick does a
                                        // coherent (fast-forward + VBL-synced) grab
                                        // so animated effects don't tear (see liveTick)
+constexpr int kMaxRecordFrames = 300;  // ~21 s at the live rate — bounds GIF memory
+constexpr int kRecordDelayCs = 7;      // per-frame GIF delay (1/100 s) ~= the live cadence
 constexpr int kCoherentGrabMs = 30;    // settle time for the fast-forward run-to-VBL
                                        // before grabbing (2 frames complete in <1 ms
                                        // under fast-forward; this covers socket latency)
@@ -198,6 +200,13 @@ void MainWindow::buildUi()
         else
             m_liveTimer->stop();
     });
+
+    m_actRecord = tb->addAction(QStringLiteral("● Rec"));
+    m_actRecord->setCheckable(true);
+    m_actRecord->setToolTip(QStringLiteral(
+        "Record the live view to an animated GIF. Toggle on to start, off to save. "
+        "Grabs the tear-free coherent frames, so the clip matches what you see."));
+    connect(m_actRecord, &QAction::toggled, this, &MainWindow::toggleRecording);
     tb->addSeparator();
 
     tb->addWidget(new QLabel(QStringLiteral(" Line "), this));
@@ -731,6 +740,7 @@ void MainWindow::grabCoherentFrame()
                         const bool beamVisible = updateBeamOverlay(img.size());
                         recomputeWriteMarks(img.size());
                         emit frameReceived(m_fb->composite(), beamVisible);
+                        recordFrame(img);   // raw, tear-free frame -> GIF (if recording)
                     }
                 }
                 m_rdb->sendCommand("ffwd 0");   // restore real-time speed
@@ -741,6 +751,71 @@ void MainWindow::grabCoherentFrame()
         });
     });
     });   // close reqRegs + breakExec
+}
+
+void MainWindow::toggleRecording(bool on)
+{
+    if (on) {
+        m_gif.clear();
+        m_recording = true;
+        // Recording only yields frames while the live view is feeding them.
+        if (!m_actLive->isChecked())
+            m_actLive->setChecked(true);
+        statusBar()->showMessage(QStringLiteral("Recording… 0 frames"));
+        return;
+    }
+
+    m_recording = false;
+    if (m_gif.frameCount() == 0) {
+        statusBar()->showMessage(QStringLiteral("Recording cancelled — no frames captured."),
+                                 4000);
+        return;
+    }
+    const QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Save recording"),
+        QDir::homePath() + QStringLiteral("/talos-clip.gif"),
+        QStringLiteral("Animated GIF (*.gif)"));
+    if (path.isEmpty()) {
+        statusBar()->showMessage(
+            QStringLiteral("Save cancelled — %1 recorded frames discarded.")
+                .arg(m_gif.frameCount()),
+            4000);
+        m_gif.clear();
+        return;
+    }
+    QString out = path;
+    if (!out.endsWith(QStringLiteral(".gif"), Qt::CaseInsensitive))
+        out += QStringLiteral(".gif");
+    const int n = m_gif.frameCount();
+    const QSize sz = m_gif.size();
+    const bool ok = m_gif.write(out);
+    m_gif.clear();
+    statusBar()->showMessage(
+        ok ? QStringLiteral("Saved %1 (%2 frames, %3×%4).")
+                 .arg(out).arg(n).arg(sz.width()).arg(sz.height())
+           : QStringLiteral("Failed to write %1.").arg(out),
+        6000);
+}
+
+void MainWindow::recordFrame(const QImage &raw)
+{
+    if (!m_recording || raw.isNull())
+        return;
+    // Half-size keeps the clip (and its in-memory frames) small; ST content stays
+    // legible and its few-colour palette survives intact.
+    m_gif.addFrame(raw.scaled(raw.size() / 2, Qt::IgnoreAspectRatio,
+                              Qt::FastTransformation),
+                   kRecordDelayCs);
+    if (m_gif.frameCount() >= kMaxRecordFrames) {
+        statusBar()->showMessage(
+            QStringLiteral("Reached %1 frames — stopping. Choose where to save…")
+                .arg(kMaxRecordFrames),
+            4000);
+        m_actRecord->setChecked(false);   // triggers toggleRecording(false) -> save
+        return;
+    }
+    statusBar()->showMessage(
+        QStringLiteral("Recording… %1 frames").arg(m_gif.frameCount()));
 }
 
 void MainWindow::readRegionFromCore()
@@ -1756,6 +1831,7 @@ void MainWindow::setControlsEnabledForCapture(bool capturing)
     m_actStep->setEnabled(en);
     m_actRefresh->setEnabled(en);
     m_actLive->setEnabled(en);
+    m_actRecord->setEnabled(en);
     m_actRunToLine->setEnabled(en);
     m_lineSpin->setEnabled(en);
     m_actCapture->setEnabled(en);
@@ -1773,6 +1849,9 @@ void MainWindow::setRunningControlsEnabled(bool connected)
     m_actStep->setEnabled(connected);
     m_actRefresh->setEnabled(connected);
     m_actLive->setEnabled(connected);
+    if (!connected && m_recording)
+        m_actRecord->setChecked(false);   // disconnecting mid-record -> prompt to save
+    m_actRecord->setEnabled(connected);
     m_actRunToLine->setEnabled(connected);
     m_lineSpin->setEnabled(connected);
     m_actCapture->setEnabled(connected);
