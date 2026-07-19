@@ -503,6 +503,11 @@ The `harness/` scripts run Hatari headless and check an effect. They need
 you, but you can run them directly:
 
 ```bash
+# The whole regression corpus in one command — determinism/non-perturbation,
+# left-border removal, raster-bar round-trip, vertical bands and the STE scroller.
+# Prints a PASS/FAIL table and exits non-zero if any check fails (~70 s).
+harness/corpus.sh                  # or: harness/corpus.sh --only border
+
 # Per-scanline determinism / non-perturbation vs stock Hatari (M1)
 harness/run.sh                     # wraps diff_harness.py with repo defaults
 
