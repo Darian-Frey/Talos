@@ -376,6 +376,34 @@ shown, but opening them cycle-exact live is left as the documented recipe.
 
 ---
 
+## 7e. Sync-scroll walkthrough (Sync scroll tab)
+
+The plain STF has no fine-scroll register (that is an STE feature). ST Connexion's
+answer — the **sync scroll** — is three **`$ffff8260`** resolution switches at the
+*start* of a scanline: **hi-res ($02)** at LineCycles ≤ 4, **med-res ($01)** at
+≤ 20, then **lo-res ($00)** at an **exact** cycle that sets the pixel shift:
+
+| lo-res switch cycle | right shift |
+|---|---|
+| 16 | 0 px (remove-left + med stabiliser) |
+| 20 | 13 px |
+| 24 | 9 px |
+| 28 | 5 px |
+| 32 | 1 px |
+
+Pick a shift and the tab shows the three switches on a zoomed **line-start
+timeline** (the ≤4 and ≤20 windows shaded), the sourced **cycle→pixel table**, and
+a **before/after** strip illustrating the shift. Combine the fine shift with a
+byte-granular screen-address change (the coarse 16 px step) to build a smooth
+scroll — the STF's answer to the STE hardware scroller. Every figure is sourced
+from Hatari `video.h`/`video.c` (C-007).
+
+This is a **teaching view**: the trick needs the low-res write to land on an
+*exact* cycle (not a window), which Talos documents rather than reproduces live —
+there is no bench-proven stub for it, unlike the runnable left border.
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need

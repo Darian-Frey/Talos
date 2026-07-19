@@ -27,6 +27,7 @@ class DmaSoundView;
 class RasterWorkspace;
 class ScrollerWorkspace;
 class BorderWalkthroughView;
+class SyncScrollView;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -149,6 +150,7 @@ private:
     RasterWorkspace *m_raster = nullptr;
     ScrollerWorkspace *m_scroller = nullptr;
     BorderWalkthroughView *m_borderView = nullptr;
+    SyncScrollView *m_syncScroll = nullptr;
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
     StPictureView *m_stPicture = nullptr;

@@ -25,6 +25,7 @@ add_executable(talos
   src/model/StPicture.cpp
   src/model/GifWriter.cpp
   src/model/BorderCodegen.cpp
+  src/model/SyncScroll.cpp
   src/view/FramebufferView.cpp
   src/view/BeamGeometry.cpp
   src/view/PaletteView.cpp
@@ -36,6 +37,7 @@ add_executable(talos
   src/view/StPictureView.cpp
   src/view/ScanlineBudgetView.cpp
   src/view/BorderWalkthroughView.cpp
+  src/view/SyncScrollView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

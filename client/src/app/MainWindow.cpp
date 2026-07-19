@@ -14,6 +14,7 @@
 #include "view/StPictureView.h"
 #include "view/ScanlineBudgetView.h"
 #include "view/BorderWalkthroughView.h"
+#include "view/SyncScrollView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -411,6 +412,12 @@ void MainWindow::buildUi()
             &MainWindow::buildBorderEffect);
     connect(m_borderView, &BorderWalkthroughView::verifyRequested, this,
             &MainWindow::verifyBorderEffect);
+
+    // Sync-scroll walkthrough (Phase 6): the STF's res-switch fine-scroll trick.
+    m_syncScroll = new SyncScrollView(this);
+    auto *syncDock = new CollapsibleDock(QStringLiteral("Sync scroll"), m_syncScroll, this);
+    addDockWidget(Qt::BottomDockWidgetArea, syncDock);
+    tabifyDockWidget(tdock, syncDock);
 
     tdock->raise();   // timeline shown first
 
