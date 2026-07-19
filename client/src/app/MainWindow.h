@@ -29,6 +29,8 @@ class ScrollerWorkspace;
 class BorderWalkthroughView;
 class SyncScrollView;
 class ReconstructView;
+class DisasmView;
+class DisasmTracer;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -154,6 +156,9 @@ private:
     BorderWalkthroughView *m_borderView = nullptr;
     SyncScrollView *m_syncScroll = nullptr;
     ReconstructView *m_reconstruct = nullptr;
+    DisasmView *m_disasm = nullptr;
+    DisasmTracer *m_tracer = nullptr;
+    QString m_disasmPath;   // scratch file for redirected disasm output
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
     StPictureView *m_stPicture = nullptr;

@@ -16,6 +16,8 @@
 #include "view/BorderWalkthroughView.h"
 #include "view/SyncScrollView.h"
 #include "view/ReconstructView.h"
+#include "view/DisasmView.h"
+#include "capture/DisasmTracer.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -83,8 +85,11 @@ MainWindow::MainWindow(Config config, QWidget *parent)
     m_machine = m_config.machine;
     m_region = m_config.region;
     m_language = m_config.language;
-    if (m_shotDir.isValid())
+    if (m_shotDir.isValid()) {
         m_shotPath = QDir(m_shotDir.path()).filePath("frame.png");
+        m_disasmPath = QDir(m_shotDir.path()).filePath("disasm.txt");
+    }
+    m_tracer = new DisasmTracer(m_rdb, this);
 
     buildUi();
 
@@ -426,6 +431,35 @@ void MainWindow::buildUi()
     auto *reconDock = new CollapsibleDock(QStringLiteral("Reconstruct"), m_reconstruct, this);
     addDockWidget(Qt::BottomDockWidgetArea, reconDock);
     tabifyDockWidget(tdock, reconDock);
+
+    // Live disassembly synced to the beam (Phase 6): step-and-trace the code
+    // around PC, showing where each instruction lands on the beam.
+    m_disasm = new DisasmView(this);
+    auto *disasmDock = new CollapsibleDock(QStringLiteral("Disassembly"), m_disasm, this);
+    addDockWidget(Qt::BottomDockWidgetArea, disasmDock);
+    tabifyDockWidget(tdock, disasmDock);
+    connect(m_disasm, &DisasmView::traceRequested, this, [this](int n) {
+        if (!m_rdb->isConnected()) {
+            m_disasm->setStatus(QStringLiteral("Connect to a machine first."), false);
+            return;
+        }
+        if (m_tracer->isRunning())
+            return;
+        m_actLive->setChecked(false);   // stepping and the live grab must not race
+        m_disasm->setBusy(true);
+        m_tracer->start(n, m_disasmPath);
+    });
+    connect(m_tracer, &DisasmTracer::finished, this, [this](bool ok, const QString &reason) {
+        m_disasm->setBusy(false);
+        if (ok)
+            m_disasm->setEntries(m_tracer->entries());
+        else
+            m_disasm->setStatus(QStringLiteral("Trace failed — %1").arg(reason), false);
+        refreshRegs();   // the machine stepped forward; resync panels + overlay
+    });
+    connect(m_disasm, &DisasmView::rowActivated, this, [this](int scanline, int cyc) {
+        showBeamAt(scanline, cyc, m_fb->imageSize(), QStringLiteral("trace: "));
+    });
 
     tdock->raise();   // timeline shown first
 

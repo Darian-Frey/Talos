@@ -39,8 +39,10 @@ add_executable(talos
   src/view/BorderWalkthroughView.cpp
   src/view/SyncScrollView.cpp
   src/view/ReconstructView.cpp
+  src/view/DisasmView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
+  src/capture/DisasmTracer.cpp
 )
 
 target_include_directories(talos PRIVATE src)

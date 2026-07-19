@@ -428,6 +428,29 @@ vertical-band capture as vertical ones.
 
 ---
 
+## 7g. Live disassembly synced to the beam (Disassembly tab)
+
+Where the register-write capture shows *when* a chosen register is written, this
+shows the **instruction stream** and where each instruction lands on the beam —
+re-aiming a debugger's disassembly at "this write happens here".
+
+1. **Break** in the code you want to read — ideally an effect's per-scanline loop
+   (Break, or Run→Line to a visible scanline, then Break).
+2. Open the **Disassembly** tab, set **Trace** to a count, and **Trace from PC**.
+
+Talos single-steps that many instructions from PC, and for each records — from
+**Hatari**, never estimated (D-002) — its disassembly, the beam position
+(**Line** = scanline, **Cycle** = cycle-in-line) it was about to run at, and its
+**Cost** in cycles (how far the beam advanced). Instructions that **write a video
+register** (`$ff82xx` — palette, sync, resolution, scroll) are **highlighted** —
+the payoff rows. Selecting any row **parks the beam overlay** on the framebuffer
+at that instruction's position, so you see exactly where on the screen it fires.
+
+(Tracing steps the machine forward and pauses the live view; press **Run**/**Live**
+to resume. The disassembly is Hatari's own, fetched via its console.)
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need

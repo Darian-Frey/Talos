@@ -93,7 +93,7 @@ Swap a bespoke cycle-exact core in behind the **same client protocol**, so the c
 **Tier 2 — natural extensions of what's built:**
 
 - **More ST image formats** — ✓ **Built.** Degas (`.PI1/.PC1`), NEOchrome (`.NEO`), Tiny (`.TNY`) — reusing the Spectrum 512 palette/decode plumbing (F-211).
-- **Live disassembly synced to the beam** — the 68k around PC (an effect's per-scanline loop) with *where each instruction lands on the beam*. hrdb has the raw pieces; Talos re-aims them at "this write happens here".
+- **Live disassembly synced to the beam** — ✓ **Built.** The *Disassembly* tab traces the next N instructions from PC (break, then single-step), tabulating each with Hatari's own disassembly, its beam position (scanline + cycle) and its cycle cost — read from Hatari, never estimated (D-002). Video-register writes (`$ff82xx`) are highlighted, and selecting a row parks the beam overlay there. Pure B1 (break/step/regs + `console disasm` over the redirect file); re-aims hrdb's raw pieces at "this write happens here".
 - **MFP timer / interrupt visualisation** — Timer A–D configuration and when each interrupt fires on the beam (Timer-B drives Spectrum 512, HBL drives scrollers).
 - **Per-scanline cycle-budget meter** — ✓ **Built.** Cycles used vs the ~512-per-line budget for an authored effect, and where it overflows (ties to the Mega STE dual-speed view, F-210).
 
