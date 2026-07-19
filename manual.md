@@ -451,6 +451,29 @@ to resume. The disassembly is Hatari's own, fetched via its console.)
 
 ---
 
+## 7h. MFP timers & interrupts (MFP tab)
+
+The MC68901 **MFP** runs the ST's four hardware timers and its interrupt
+controller — Timer-B drives Spectrum 512, Timer-C is the 200 Hz system tick, and
+effects lean on the timers and the HBL. The **MFP** tab reads the register block
+(`$fffa00`–`$fffa2f`) from the live machine and decodes it:
+
+- **Timer table** (A–D): the **mode** (stopped / delay / event count / pulse),
+  **prescaler** (`/4`…`/200`), **data** register, computed **frequency**
+  (XTAL 2.4576 MHz ÷ prescaler ÷ data) and **interrupts per frame** — e.g. a
+  running Timer-C shows *200 Hz · 4/frame (~every 78 lines)*. Running timers are
+  green; Timer-B in **event count** mode fires per counted event (display line).
+- **Interrupt matrix** (16 sources, highest priority first): **En** (enabled,
+  IER), **Msk** (unmasked, IMR), **Pnd** (pending, IPR), **Svc** (in-service,
+  ISR). Timer rows are highlighted; a source that is enabled *and* unmasked is
+  the one that will actually interrupt the CPU.
+
+Press **Read MFP** to refresh (it also refreshes on a manual **Refresh**). Every
+figure is decoded from the registers with constants sourced from Hatari
+(`mfp.c` / `clocks_timings.c`, C-007) — Talos reads the MFP, it does not emulate it.
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need

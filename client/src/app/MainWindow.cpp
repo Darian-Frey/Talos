@@ -18,6 +18,9 @@
 #include "view/ReconstructView.h"
 #include "view/DisasmView.h"
 #include "capture/DisasmTracer.h"
+#include "view/MfpView.h"
+#include "model/MfpState.h"
+#include "protocol/MemCodec.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -460,6 +463,14 @@ void MainWindow::buildUi()
     connect(m_disasm, &DisasmView::rowActivated, this, [this](int scanline, int cyc) {
         showBeamAt(scanline, cyc, m_fb->imageSize(), QStringLiteral("trace: "));
     });
+
+    // MFP timer / interrupt visualisation (Phase 6): the four 68901 timers and
+    // the interrupt controller, decoded from the live register block.
+    m_mfp = new MfpView(this);
+    auto *mfpDock = new CollapsibleDock(QStringLiteral("MFP"), m_mfp, this);
+    addDockWidget(Qt::BottomDockWidgetArea, mfpDock);
+    tabifyDockWidget(tdock, mfpDock);
+    connect(m_mfp, &MfpView::readRequested, this, &MainWindow::readMfp);
 
     tdock->raise();   // timeline shown first
 
@@ -929,6 +940,7 @@ void MainWindow::refreshRegs()
         updateStatusBar();
         checkBootFastForward();
         refreshScreen();
+        readMfp();   // keep the MFP panel current on a manual refresh
     });
 }
 
@@ -1956,6 +1968,22 @@ void MainWindow::updateReconstruct()
 {
     if (m_reconstruct)
         m_reconstruct->setReconstruction(m_writes, m_region, m_capture->address());
+}
+
+void MainWindow::readMfp()
+{
+    if (!m_mfp || !m_rdb->isConnected())
+        return;
+    // The 68901 lives at $fffa01..$fffa2f (odd bytes); read from $fffa00 so the
+    // register at $fffaNN is byte NN of the block.
+    m_mfp->setBusy(true);
+    m_rdb->sendCommand("mem fffa00 30", [this](const RdbClient::Tokens &r) {
+        m_mfp->setBusy(false);
+        if (r.size() < 4 || r.first() != "OK")
+            return;
+        const QByteArray block = MemCodec::decode(r.last(), 48);
+        m_mfp->setState(Mfp::decode(block, m_region));
+    });
 }
 
 void MainWindow::populateTimeline()

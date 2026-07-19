@@ -31,6 +31,7 @@ class SyncScrollView;
 class ReconstructView;
 class DisasmView;
 class DisasmTracer;
+class MfpView;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -138,6 +139,7 @@ private:
     bool showBeamAt(int scanline, int cycleInLine, QSize frameSize, const QString &prefix = {});
     void recomputeWriteMarks(QSize frameSize);
     void updateReconstruct();   // F-218: rebuild the register-reconstruction panel
+    void readMfp();             // Phase 6: read + decode the MFP register block
     void populateTimeline();
     void updateBudget();        // recompute the per-scanline cycle-budget gauge
     void setupScrub();          // arm the scrubber for the just-captured frame
@@ -158,6 +160,7 @@ private:
     ReconstructView *m_reconstruct = nullptr;
     DisasmView *m_disasm = nullptr;
     DisasmTracer *m_tracer = nullptr;
+    MfpView *m_mfp = nullptr;
     QString m_disasmPath;   // scratch file for redirected disasm output
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
