@@ -37,6 +37,7 @@ QString guessRepoRelative(const QString &rel)
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    QApplication::setOrganizationName("Talos");   // gives QSettings a stable location
     QApplication::setApplicationName("Talos");
     QApplication::setApplicationVersion("0.0.0-M0");
 

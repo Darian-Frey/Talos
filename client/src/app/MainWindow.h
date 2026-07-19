@@ -8,6 +8,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include "model/Machine.h"
@@ -49,6 +50,7 @@ class QToolButton;
 class QSpinBox;
 class QLineEdit;
 class QComboBox;
+class QMenu;
 
 class MainWindow : public QMainWindow
 {
@@ -142,7 +144,11 @@ private:
     void recomputeWriteMarks(QSize frameSize);
     void updateReconstruct();   // F-218: rebuild the register-reconstruction panel
     void readMfp();             // Phase 6: read + decode the MFP register block
-    void openProgram();         // load + run a real ST program / disk image
+    void openProgram();         // load + run a real ST program / disk image (file dialog)
+    void loadFile(const QString &file);   // dispatch + load + boot a program/disk path
+    void addRecent(const QString &file);  // push a path onto the recent-files list
+    void removeRecent(const QString &file);
+    void rebuildRecentMenu();             // repopulate the Open… dropdown from m_recentFiles
     void manageDisks();         // drive A/B disk manager: hot-swap, eject, desktop
     void compareMachines(MachineType a, MachineType b);   // Phase 6: A/B comparison
     void populateTimeline();
@@ -194,6 +200,9 @@ private:
     QAction *m_actLoadState = nullptr;
     QAction *m_actOpen = nullptr;
     QAction *m_actDisks = nullptr;
+    QMenu *m_recentMenu = nullptr;        // recent-files dropdown on the Open… button
+    QStringList m_recentFiles;            // persisted via QSettings ("recentFiles")
+    static constexpr int kMaxRecent = 12;
     LedToolButton *m_fastBootBtn = nullptr;   // checkable + retro LED: fast-forward the boot
     QAction *m_actBreak = nullptr;
     QAction *m_actRun = nullptr;

@@ -157,7 +157,9 @@ continue — or pre-load disk 2 in **drive B** if the demo looks there.
 - **Open…** — load a **real ST program or disk image** and run it, so you can point
   Talos's instrumentation at demos and programs you didn't build (§3a). `.PRG` /
   `.TOS` auto-run from a GEMDOS drive; `.ST` / `.MSA` / `.STX` / `.DIM` / `.IPF`
-  boot as a floppy in drive A.
+  boot as a floppy in drive A. The button's **▾ dropdown** lists **recent files**
+  (programs and disks you've opened, remembered across sessions) — pick one to
+  re-load it; **Clear recent files** empties the list.
 - **Disks…** — the drive **A/B disk manager**: insert / eject a floppy in either
   drive, **hot-swap** a disk on the *running* machine for a **multi-disk demo**
   (no reboot), or **boot to a clean desktop** (§3a).

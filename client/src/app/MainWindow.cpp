@@ -50,7 +50,10 @@
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
+#include <QSettings>
+#include <QToolButton>
 #include <QLineEdit>
 #include <QSlider>
 #include <QSpinBox>
@@ -200,6 +203,15 @@ void MainWindow::buildUi()
         "Load a real ST program or disk image and run it, then instrument it: "
         ".PRG/.TOS auto-run from a GEMDOS drive; .ST/.MSA/.STX/.DIM/.IPF boot as a floppy"));
     connect(m_actOpen, &QAction::triggered, this, &MainWindow::openProgram);
+    // Recent-files dropdown on the Open… button (the button still opens the dialog;
+    // its arrow lists recently-loaded programs/disks). Persisted across sessions.
+    m_recentMenu = new QMenu(this);
+    m_recentMenu->setToolTipsVisible(true);
+    m_actOpen->setMenu(m_recentMenu);
+    if (auto *btn = qobject_cast<QToolButton *>(tb->widgetForAction(m_actOpen)))
+        btn->setPopupMode(QToolButton::MenuButtonPopup);
+    m_recentFiles = QSettings().value(QStringLiteral("recentFiles")).toStringList();
+    rebuildRecentMenu();
 
     m_actDisks = tb->addAction(QStringLiteral("Disks…"));
     m_actDisks->setToolTip(QStringLiteral(
@@ -2088,6 +2100,18 @@ void MainWindow::openProgram()
         QStringLiteral("ST programs & disks (%1);;All files (*)").arg(pats.join(QLatin1Char(' '))));
     if (file.isEmpty())
         return;
+    loadFile(file);
+}
+
+void MainWindow::loadFile(const QString &file)
+{
+    if (m_config.attachOnly || file.isEmpty())
+        return;
+    if (!QFileInfo::exists(file)) {
+        statusBar()->showMessage(QStringLiteral("File no longer exists: %1").arg(file), 5000);
+        removeRecent(file);
+        return;
+    }
 
     const QFileInfo fi(file);
     const QString ext = fi.suffix().toLower();
@@ -2134,11 +2158,57 @@ void MainWindow::openProgram()
             8000);
     }
 
+    addRecent(file);
     // Loaded content should boot in real time so it can be watched (no fast-boot).
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
     else
         onStartClicked();
+}
+
+void MainWindow::addRecent(const QString &file)
+{
+    const QString abs = QFileInfo(file).absoluteFilePath();
+    m_recentFiles.removeAll(abs);
+    m_recentFiles.prepend(abs);
+    while (m_recentFiles.size() > kMaxRecent)
+        m_recentFiles.removeLast();
+    QSettings().setValue(QStringLiteral("recentFiles"), m_recentFiles);
+    rebuildRecentMenu();
+}
+
+void MainWindow::removeRecent(const QString &file)
+{
+    int removed = m_recentFiles.removeAll(file);
+    removed += m_recentFiles.removeAll(QFileInfo(file).absoluteFilePath());
+    if (removed > 0) {
+        QSettings().setValue(QStringLiteral("recentFiles"), m_recentFiles);
+        rebuildRecentMenu();
+    }
+}
+
+void MainWindow::rebuildRecentMenu()
+{
+    if (!m_recentMenu)
+        return;
+    m_recentMenu->clear();
+    if (m_recentFiles.isEmpty()) {
+        QAction *none = m_recentMenu->addAction(QStringLiteral("(no recent files)"));
+        none->setEnabled(false);
+        return;
+    }
+    for (const QString &f : m_recentFiles) {
+        QAction *a = m_recentMenu->addAction(QFileInfo(f).fileName());
+        a->setToolTip(f);
+        connect(a, &QAction::triggered, this, [this, f] { loadFile(f); });
+    }
+    m_recentMenu->addSeparator();
+    QAction *clear = m_recentMenu->addAction(QStringLiteral("Clear recent files"));
+    connect(clear, &QAction::triggered, this, [this] {
+        m_recentFiles.clear();
+        QSettings().setValue(QStringLiteral("recentFiles"), m_recentFiles);
+        rebuildRecentMenu();
+    });
 }
 
 void MainWindow::manageDisks()
@@ -2182,6 +2252,7 @@ void MainWindow::manageDisks()
                 return;
             *cfg = f;
             lbl->setText(QFileInfo(f).fileName());
+            addRecent(f);
             if (connected)
                 m_rdb->sendCommand(QStringLiteral("floppy %1 %2").arg(drive).arg(f).toUtf8());
             statusBar()->showMessage(
