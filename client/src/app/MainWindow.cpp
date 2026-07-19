@@ -21,6 +21,7 @@
 #include "view/MfpView.h"
 #include "model/MfpState.h"
 #include "protocol/MemCodec.h"
+#include "view/AbCompareView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -471,6 +472,14 @@ void MainWindow::buildUi()
     addDockWidget(Qt::BottomDockWidgetArea, mfpDock);
     tabifyDockWidget(tdock, mfpDock);
     connect(m_mfp, &MfpView::readRequested, this, &MainWindow::readMfp);
+
+    // A/B machine comparison (Phase 6): the last-built effect on two machines,
+    // side by side with a per-scanline diff (extends the F-207 differential).
+    m_ab = new AbCompareView(this);
+    auto *abDock = new CollapsibleDock(QStringLiteral("A/B compare"), m_ab, this);
+    addDockWidget(Qt::BottomDockWidgetArea, abDock);
+    tabifyDockWidget(tdock, abDock);
+    connect(m_ab, &AbCompareView::compareRequested, this, &MainWindow::compareMachines);
 
     tdock->raise();   // timeline shown first
 
@@ -1968,6 +1977,53 @@ void MainWindow::updateReconstruct()
 {
     if (m_reconstruct)
         m_reconstruct->setReconstruction(m_writes, m_region, m_capture->address());
+}
+
+void MainWindow::compareMachines(MachineType a, MachineType b)
+{
+    const QString effect = m_config.hatari.gemdosDir;
+    if (effect.isEmpty()) {
+        m_ab->setStatus(QStringLiteral("Build or load an effect first (Raster / Scroller / Border)."),
+                        false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString tool = repo + QStringLiteral("/harness/ab_compare.py");
+    if (!QFileInfo::exists(tool)) {
+        m_ab->setStatus(QStringLiteral("A/B harness not found: %1").arg(tool), false);
+        return;
+    }
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        doStop();   // the harness launches its own Hatari on the fixed port
+
+    const QString outA = m_shotDir.isValid() ? QDir(m_shotDir.path()).filePath("ab_a.png")
+                                             : QString();
+    const QString outB = m_shotDir.isValid() ? QDir(m_shotDir.path()).filePath("ab_b.png")
+                                             : QString();
+    const QString nameA = Machines::info(a).name, nameB = Machines::info(b).name;
+
+    m_ab->setBusy(true);
+    QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                     QStringLiteral("--tos"), m_config.hatari.tosImage,
+                     QStringLiteral("--effect"), effect,
+                     QStringLiteral("--machine-a"), Machines::info(a).hatariMachine,
+                     QStringLiteral("--machine-b"), Machines::info(b).hatariMachine,
+                     QStringLiteral("--out-a"), outA, QStringLiteral("--out-b"), outB};
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this,
+            [this, proc, outA, outB, nameA, nameB](int code, QProcess::ExitStatus) {
+                m_ab->setBusy(false);
+                const QImage a(outA), b(outB);
+                if (code != 0 || a.isNull() || b.isNull()) {
+                    const QString err = QString::fromUtf8(proc->readAllStandardOutput())
+                                            .section('\n', -2).trimmed();
+                    m_ab->setStatus(QStringLiteral("Compare failed — %1").arg(err), false);
+                } else {
+                    m_ab->setFrames(a, b, nameA, nameB);
+                }
+                proc->deleteLater();
+            });
+    proc->start(QStringLiteral("python3"), args);
 }
 
 void MainWindow::readMfp()

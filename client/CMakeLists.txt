@@ -42,6 +42,7 @@ add_executable(talos
   src/view/ReconstructView.cpp
   src/view/DisasmView.cpp
   src/view/MfpView.cpp
+  src/view/AbCompareView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
   src/capture/DisasmTracer.cpp

@@ -474,6 +474,28 @@ figure is decoded from the registers with constants sourced from Hatari
 
 ---
 
+## 7i. A/B machine comparison (A/B compare tab)
+
+Runs the **last-built effect** on two machines side by side and shows where they
+diverge — the STE's brighter palette or its prefetch shift changing an
+ST-authored effect, or an STE-only effect that is blank on a plain ST. Extends the
+F-207 ST↔STE differential to whole frames.
+
+1. Build an effect first (Raster / Scroller / Border — it sets the compared
+   program).
+2. Open the **A/B compare** tab, pick **A** and **B** machines (e.g. *520/1040 ST*
+   vs *STE*), and **Compare**.
+
+Talos captures a frame of the effect on each machine **headless** (each synced to
+the same VBL, via `harness/ab_compare.py`) and shows them side by side with a
+**Δ strip** — a red mark on every scanline where the two frames differ — and a
+count. A machine-agnostic effect reads *Identical*; a raster effect using STE-only
+bright colours (bit 3 of a gun nibble) shows *all scanlines differ* because a
+plain ST masks those colours darker (the C-008 palette quirk). Talos captures and
+diffs; it emulates nothing.
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need

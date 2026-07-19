@@ -100,7 +100,7 @@ Swap a bespoke cycle-exact core in behind the **same client protocol**, so the c
 **Tier 3 — presentation & interop:**
 
 - **Frame / GIF recorder** — ✓ **Built.** Capture the (now tear-free, BUG-009) live view to a looping animated GIF for sharing an effect — a self-contained GIF89a encoder (ST content is palette-indexed, so colours are preserved exactly).
-- **A/B machine comparison** — the same effect on two machines/regions side by side, highlighting where the STE prefetch shift breaks it (extends the F-207 differential).
+- **A/B machine comparison** — ✓ **Built.** The *A/B compare* tab runs the last-built effect on two chosen machines (each captured headless via `harness/ab_compare.py`, synced to the same VBL) and shows the frames side by side with a per-scanline Δ strip marking every divergent line. Extends the F-207 ST↔STE differential to whole frames; validated (a machine-agnostic effect reads *identical*; an STE-bright-colour effect diverges on every line, since a plain ST masks those colours — C-008). Talos captures and diffs; it emulates nothing.
 - **Custom font import for the scroller** — ✓ **Built.** Bring-your-own font (from a font-sheet image) instead of the built-in 8×8 (F-212 scroller).
 
 **Housekeeping already on the books:**
