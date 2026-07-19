@@ -13,6 +13,7 @@
 #include "view/Spectrum512View.h"
 #include "view/StPictureView.h"
 #include "view/ScanlineBudgetView.h"
+#include "view/BorderWalkthroughView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -399,6 +400,17 @@ void MainWindow::buildUi()
     auto *stPicDock = new CollapsibleDock(QStringLiteral("ST picture"), m_stPicture, this);
     addDockWidget(Qt::BottomDockWidgetArea, stPicDock);
     tabifyDockWidget(tdock, stPicDock);
+
+    // Border-removal walkthrough (Phase 6): guided tour of the four ST borders,
+    // with the left border runnable (finishes M1's story).
+    m_borderView = new BorderWalkthroughView(this);
+    auto *borderDock = new CollapsibleDock(QStringLiteral("Border walkthrough"), m_borderView, this);
+    addDockWidget(Qt::BottomDockWidgetArea, borderDock);
+    tabifyDockWidget(tdock, borderDock);
+    connect(m_borderView, &BorderWalkthroughView::buildRequested, this,
+            &MainWindow::buildBorderEffect);
+    connect(m_borderView, &BorderWalkthroughView::verifyRequested, this,
+            &MainWindow::verifyBorderEffect);
 
     tdock->raise();   // timeline shown first
 
@@ -1527,6 +1539,137 @@ void MainWindow::verifyScrollerEffect(const QString &message, int speed)
         proc->deleteLater();
     });
     proc->start(QStringLiteral("python3"), args);
+}
+
+void MainWindow::buildBorderEffect(BorderCodegen::Border border)
+{
+    if (border != BorderCodegen::Border::Left) {
+        m_borderView->setResult(
+            QStringLiteral("Only the left border is runnable; the others are teaching views."),
+            false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    if (!QFileInfo::exists(vasm)) {
+        m_borderView->setResult(QStringLiteral("vasm not found — run scripts/bootstrap-vasm.sh"), false);
+        return;
+    }
+    if (!m_borderDir.isValid()) {
+        m_borderView->setResult(QStringLiteral("no scratch directory"), false);
+        return;
+    }
+    const QString srcPath = m_borderDir.filePath(QStringLiteral("border.s"));
+    QDir(m_borderDir.path()).mkpath(QStringLiteral("AUTO"));
+    QFile f(srcPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_borderView->setResult(QStringLiteral("could not write border.s"), false);
+        return;
+    }
+    f.write(BorderCodegen::generateLeft().toUtf8());
+    f.close();
+
+    m_borderView->setBusy(true);
+    m_borderView->setResult(QStringLiteral("Assembling…"), true);
+    auto *proc = new QProcess(this);
+    connect(proc, &QProcess::finished, this, [this, proc](int code, QProcess::ExitStatus) {
+        m_borderView->setBusy(false);
+        if (code != 0) {
+            m_borderView->setResult(QStringLiteral("vasm failed: %1").arg(
+                QString::fromUtf8(proc->readAllStandardError()).left(200)), false);
+        } else {
+            // Left-border timing is ST/PAL (512 cyc/line) — preview there.
+            {
+                const QSignalBlocker b1(m_machineCombo), b2(m_regionCombo);
+                m_machine = MachineType::ST;
+                m_region = VideoRegion::Pal50;
+                m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
+                m_regionCombo->setCurrentIndex(0);
+            }
+            updateCapabilities();
+            m_config.hatari.gemdosDir = m_borderDir.path();
+            m_borderView->setResult(
+                QStringLiteral("Built BORDER.PRG — launching on ST/PAL; watch the left border open."),
+                true);
+            if (m_launcher->isRunning() || m_rdb->isConnected())
+                relaunch();
+            else
+                onStartClicked();
+        }
+        proc->deleteLater();
+    });
+    proc->start(vasm, {QStringLiteral("-Ftos"),
+                       QStringLiteral("-o"), m_borderDir.filePath(QStringLiteral("AUTO/BORDER.PRG")),
+                       srcPath});
+}
+
+void MainWindow::verifyBorderEffect(BorderCodegen::Border border)
+{
+    if (border != BorderCodegen::Border::Left) {
+        m_borderView->setResult(
+            QStringLiteral("Only the left border has a runnable check in this build."), false);
+        return;
+    }
+    const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
+    const QString vasm = repo + QStringLiteral("/external/vasm-src/vasm/vasmm68k_mot");
+    const QString tool = repo + QStringLiteral("/harness/diff_harness.py");
+    if (!QFileInfo::exists(vasm) || !QFileInfo::exists(tool)) {
+        m_borderView->setResult(QStringLiteral("vasm or harness not found under %1").arg(repo), false);
+        return;
+    }
+    if (!m_borderDir.isValid()) {
+        m_borderView->setResult(QStringLiteral("no scratch directory"), false);
+        return;
+    }
+    const QString srcPath = m_borderDir.filePath(QStringLiteral("border.s"));
+    QDir(m_borderDir.path()).mkpath(QStringLiteral("AUTO"));
+    QFile f(srcPath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        m_borderView->setResult(QStringLiteral("could not write border.s"), false);
+        return;
+    }
+    f.write(BorderCodegen::generateLeft().toUtf8());
+    f.close();
+
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        doStop();   // the harness launches its own Hatari on the fixed port
+
+    // Two steps: assemble border.s -> AUTO/BORDER.PRG, then run the border-check
+    // harness against the folder. Chained so the harness sees the fresh PRG.
+    m_borderView->setBusy(true);
+    m_borderView->setResult(QStringLiteral("Assembling…"), true);
+    auto *asmProc = new QProcess(this);
+    connect(asmProc, &QProcess::finished, this,
+            [this, asmProc, repo, tool](int code, QProcess::ExitStatus) {
+        if (code != 0) {
+            m_borderView->setBusy(false);
+            m_borderView->setResult(QStringLiteral("vasm failed: %1").arg(
+                QString::fromUtf8(asmProc->readAllStandardError()).left(200)), false);
+            asmProc->deleteLater();
+            return;
+        }
+        asmProc->deleteLater();
+        m_borderView->setResult(QStringLiteral("Verifying on Hatari (headless, ~20 s)…"), true);
+        QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                         QStringLiteral("--tos"), m_config.hatari.tosImage,
+                         QStringLiteral("--effect"), m_borderDir.path(),
+                         QStringLiteral("--border-check")};
+        auto *proc = new QProcess(this);
+        connect(proc, &QProcess::finished, this, [this, proc](int c, QProcess::ExitStatus) {
+            m_borderView->setBusy(false);
+            const QString out = QString::fromUtf8(proc->readAllStandardOutput());
+            const bool ok = (c == 0) && out.contains(QStringLiteral("BORDER CHECK PASS"));
+            m_borderView->setResult(
+                ok ? QStringLiteral("Verified ✓ — the left border opens on a band of scanlines")
+                   : QStringLiteral("Verify FAILED — %1").arg(out.section('\n', -2).trimmed()),
+                ok);
+            proc->deleteLater();
+        });
+        proc->start(QStringLiteral("python3"), args);
+    });
+    asmProc->start(vasm, {QStringLiteral("-Ftos"),
+                          QStringLiteral("-o"),
+                          m_borderDir.filePath(QStringLiteral("AUTO/BORDER.PRG")), srcPath});
 }
 
 void MainWindow::exportScrollerEffect(const QString &message, int speed)

@@ -12,6 +12,7 @@
 
 #include "model/Machine.h"
 #include "model/MachineState.h"
+#include "model/BorderCodegen.h"
 #include "model/GifWriter.h"
 #include "model/RasterCodegen.h"
 #include "model/WriteEvent.h"
@@ -25,6 +26,7 @@ class BlitterTrafficView;
 class DmaSoundView;
 class RasterWorkspace;
 class ScrollerWorkspace;
+class BorderWalkthroughView;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -104,6 +106,8 @@ private slots:
     void verifyScrollerEffect(const QString &message, int speed);
     void exportScrollerEffect(const QString &message, int speed);
     void importScrollerEffect();
+    void buildBorderEffect(BorderCodegen::Border border);   // Phase 6: left-border removal
+    void verifyBorderEffect(BorderCodegen::Border border);  // Phase 6: border-check harness
     void onFramebufferClicked(const QPointF &imagePixel);   // click-to-place authoring
     void onCaptureProgress(int count, int target);
     void onCaptureFinished(bool ok, const QString &reason);
@@ -144,11 +148,13 @@ private:
     DmaSoundView *m_dmaView = nullptr;
     RasterWorkspace *m_raster = nullptr;
     ScrollerWorkspace *m_scroller = nullptr;
+    BorderWalkthroughView *m_borderView = nullptr;
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
     StPictureView *m_stPicture = nullptr;
     QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG
     QTemporaryDir m_scrollerDir;          // holds the generated scroller .s + AUTO/SCROLLER.PRG
+    QTemporaryDir m_borderDir;            // holds the generated border .s + AUTO/BORDER.PRG
     QProcess *m_rasterProc = nullptr;     // vasm / verify subprocess (one at a time)
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;

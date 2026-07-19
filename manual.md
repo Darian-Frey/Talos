@@ -348,6 +348,34 @@ gauge and updates live as you edit the **Raster workspace**:
 
 ---
 
+## 7d. Border-removal walkthrough (Border walkthrough tab)
+
+A guided tour of the four ST screen borders — the trick that turns a border into
+extra screen. Pick **Left / Right / Top / Bottom** and the tab shows, on one 2-D
+**screen diagram** (X = cycles across a scanline, Y = lines down the frame):
+
+- the normal **display rectangle** (cycles 56–376 × lines 63–263, PAL);
+- the region that border **opens** (green) — left/right widen the *line*,
+  top/bottom add *lines* to the *frame*;
+- the **switch marker**: for left/right a vertical line at the cycle the write
+  must hit (every line); for top/bottom a horizontal line at the trick scanline
+  with a tick at cycle **504** (the deadline).
+
+Below the diagram, the **facts panel** gives the exact **register** and write
+(`$ffff8260` hi/lo for the left border; `$ffff820a` 50↔60 Hz for the others), the
+**cycle window**, which **line(s)** it runs on, and the **consequence** (left
+~52 px, right +44 px, top +29 lines, bottom +47 lines in 50 Hz). Every figure is
+sourced from Hatari's `video.h`/`video.c` — never from memory (C-007).
+
+The **Left border** is runnable: **Build & Run** codegens a cycle-exact
+`$ffff8260` hi/lo switch, assembles it and launches on ST/PAL so you watch the
+left border open live; **Verify on Hatari** runs it headless and confirms the
+border opens on a band of scanlines (the `diff_harness.py --border-check` path).
+The other three are teaching views — the mechanism, window and consequence are
+shown, but opening them cycle-exact live is left as the documented recipe.
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need
