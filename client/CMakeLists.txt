@@ -38,6 +38,7 @@ add_executable(talos
   src/view/ScanlineBudgetView.cpp
   src/view/BorderWalkthroughView.cpp
   src/view/SyncScrollView.cpp
+  src/view/ReconstructView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
 )

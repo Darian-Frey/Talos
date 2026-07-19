@@ -28,6 +28,7 @@ class RasterWorkspace;
 class ScrollerWorkspace;
 class BorderWalkthroughView;
 class SyncScrollView;
+class ReconstructView;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -134,6 +135,7 @@ private:
     bool updateBeamOverlay(QSize frameSize);   // returns whether the beam is on-frame
     bool showBeamAt(int scanline, int cycleInLine, QSize frameSize, const QString &prefix = {});
     void recomputeWriteMarks(QSize frameSize);
+    void updateReconstruct();   // F-218: rebuild the register-reconstruction panel
     void populateTimeline();
     void updateBudget();        // recompute the per-scanline cycle-budget gauge
     void setupScrub();          // arm the scrubber for the just-captured frame
@@ -151,6 +153,7 @@ private:
     ScrollerWorkspace *m_scroller = nullptr;
     BorderWalkthroughView *m_borderView = nullptr;
     SyncScrollView *m_syncScroll = nullptr;
+    ReconstructView *m_reconstruct = nullptr;
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;
     StPictureView *m_stPicture = nullptr;

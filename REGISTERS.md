@@ -28,7 +28,7 @@ Append-only. Feature IDs (F-NNN) continue the Talos numbering established in `At
 - **F-215** State model: per-frame ring of cycle/scanline-indexed events (register writes, beam positions, Blitter/DMA activity) that all panels read from.
 - **F-216** Hatari configuration generation (machine/TOS/RAM/region), shareable in concept with Hermes' launch-config logic.
 - **F-217** State-snapshot capture/restore (via Hatari's whole-system save/restore) for parking prototypes and seeding validation runs.
-- **F-218** Secondary "reconstruct-from-registers" view (optional, teaching) — additional to, never replacing, F-202. *(per D-007)*
+- **F-218** Secondary "reconstruct-from-registers" view (optional, teaching) — additional to, never replacing, F-202. *(per D-007)* — **Built (Phase 6):** the *Reconstruct* tab shows Hatari's taken frame beside a screen rebuilt purely from the captured palette writes (folded onto one frame by beam position via BeamGeometry, coloured by Palette::decode). Meaningful for palette-register captures ($ff8240–$ff825e); e.g. capturing $ff8240 reconstructs a raster-bar / vertical-band background colour field, so register-vs-reality divergence is visible. Strictly secondary; the taken framebuffer remains F-202.
 
 ## Constraint / claim register (C-NNN)
 

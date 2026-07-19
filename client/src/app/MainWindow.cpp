@@ -15,6 +15,7 @@
 #include "view/ScanlineBudgetView.h"
 #include "view/BorderWalkthroughView.h"
 #include "view/SyncScrollView.h"
+#include "view/ReconstructView.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -419,6 +420,13 @@ void MainWindow::buildUi()
     addDockWidget(Qt::BottomDockWidgetArea, syncDock);
     tabifyDockWidget(tdock, syncDock);
 
+    // Reconstruct-from-registers (F-218): the taken frame beside a screen rebuilt
+    // purely from the captured palette writes — secondary, never a replacement.
+    m_reconstruct = new ReconstructView(this);
+    auto *reconDock = new CollapsibleDock(QStringLiteral("Reconstruct"), m_reconstruct, this);
+    addDockWidget(Qt::BottomDockWidgetArea, reconDock);
+    tabifyDockWidget(tdock, reconDock);
+
     tdock->raise();   // timeline shown first
 
     // Machine capabilities / differential view (F-207).
@@ -579,6 +587,7 @@ void MainWindow::onRegionChanged(int index)
     m_region = (index == 1) ? VideoRegion::Ntsc60 : VideoRegion::Pal50;
     reconcileRegion();   // a language with no NTSC variant snaps back to PAL
     updateBudget();      // 512 (PAL) vs 508 (NTSC) cycles/line
+    updateReconstruct(); // F-218 geometry follows the region
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -760,6 +769,8 @@ void MainWindow::grabCoherentFrame()
                         recomputeWriteMarks(img.size());
                         emit frameReceived(m_fb->composite(), beamVisible);
                         recordFrame(img);   // raw, tear-free frame -> GIF (if recording)
+                        if (m_reconstruct)
+                            m_reconstruct->setFrame(img);   // F-218 reality panel
                     }
                 }
                 m_rdb->sendCommand("ffwd 0");   // restore real-time speed
@@ -933,6 +944,8 @@ void MainWindow::refreshScreen()
         const bool beamVisible = updateBeamOverlay(img.size());
         recomputeWriteMarks(img.size());
         emit frameReceived(m_fb->composite(), beamVisible);
+        if (m_reconstruct)
+            m_reconstruct->setFrame(img);   // F-218 reality panel
     });
 }
 
@@ -1780,6 +1793,7 @@ void MainWindow::onCaptureFinished(bool ok, const QString &reason)
     m_writes = m_capture->events();
     populateTimeline();
     setupScrub();
+    updateReconstruct();   // F-218: rebuild the register field from the new writes
     setControlsEnabledForCapture(false);
     // Persist the result in the status bar so a 0-write timeout isn't easy to miss.
     const QString reg = QStringLiteral("$%1").arg(m_capture->address(), 0, 16);
@@ -1902,6 +1916,12 @@ void MainWindow::recomputeWriteMarks(QSize frameSize)
         marks.append(m);
     }
     m_fb->setWriteMarks(marks);
+}
+
+void MainWindow::updateReconstruct()
+{
+    if (m_reconstruct)
+        m_reconstruct->setReconstruction(m_writes, m_region, m_capture->address());
 }
 
 void MainWindow::populateTimeline()

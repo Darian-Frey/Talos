@@ -404,6 +404,30 @@ there is no bench-proven stub for it, unlike the runnable left border.
 
 ---
 
+## 7f. Reconstruct from registers (Reconstruct tab — F-218)
+
+A **secondary** teaching view: Hatari's taken framebuffer beside a screen rebuilt
+**purely from the captured register writes**, so you see *why* the picture looks
+as it does — and where the register field and reality diverge. It never replaces
+the taken frame (D-007).
+
+1. Set **Reg $** to a palette register — **`ff8240`** (background / palette 0) is
+   the useful one — and **Capture** a band of writes (see §4) on a running raster
+   or vertical-band effect.
+2. Open the **Reconstruct** tab. The right panel folds those writes onto one
+   frame by their beam position (scanline + cycle) and paints each pixel with the
+   palette colour in effect there — reconstructing the effect's background colour
+   field. The left panel is Hatari's real frame for comparison.
+
+The reconstruction is meaningful for **palette-register** captures
+(`$ff8240`–`$ff825e`); other registers show a note. Talos does not emulate here —
+it decodes the captured values with the same ST/STE palette rules as the real
+machine (the STE bit-order quirk included) and places them with the beam
+geometry, so a raster-bars capture rebuilds as horizontal colour bands and a
+vertical-band capture as vertical ones.
+
+---
+
 ## 8. Verify harnesses (command line)
 
 The `harness/` scripts run Hatari headless and check an effect. They need
