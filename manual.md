@@ -114,6 +114,21 @@ watch it, and replaces any built effect, loaded program or snapshot. Then use
 programs work directly; multi-file programs are best run from their disk image.
 Sound is off (Talos runs Hatari muted for reproducible instrumentation).
 
+**Multi-disk demos and drive B — the Disks… dialog.** Many demos span several
+disks and ask you to "insert disk 2". Toolbar **Disks…** manages both drives:
+
+- **Insert… / Eject** on **drive A** or **drive B**. On a *running* machine this is
+  a live **hot-swap** — the floppy changes under the demo (via a small patched
+  `floppy` command that raises the drive's media-change), so it reads the new disk
+  without a reboot. When nothing is running, it just sets the drives for the next
+  launch.
+- **Boot to clean desktop** — eject everything (disks, program, snapshot) and
+  relaunch to a bare TOS desktop.
+
+So the flow for a multi-disk demo is: **Open…** the boot disk, let it run, and when
+it asks for the next disk, **Disks… → drive A → Insert…** the next image and
+continue — or pre-load disk 2 in **drive B** if the demo looks there.
+
 ---
 
 ## 4. The interface
@@ -143,6 +158,9 @@ Sound is off (Talos runs Hatari muted for reproducible instrumentation).
   Talos's instrumentation at demos and programs you didn't build (§3a). `.PRG` /
   `.TOS` auto-run from a GEMDOS drive; `.ST` / `.MSA` / `.STX` / `.DIM` / `.IPF`
   boot as a floppy in drive A.
+- **Disks…** — the drive **A/B disk manager**: insert / eject a floppy in either
+  drive, **hot-swap** a disk on the *running* machine for a **multi-disk demo**
+  (no reboot), or **boot to a clean desktop** (§3a).
 - **Fast boot** (toggle with a red LED) — fast-forward an effect's ~14 s boot then
   drop back to normal speed once the effect is detected running (BUG-007). The LED
   glows red while fast boot is on; uncheck it to watch the boot at real speed.

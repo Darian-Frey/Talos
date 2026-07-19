@@ -74,6 +74,8 @@ bool HatariLauncher::launch(const Config &cfg)
         args << "-d" << cfg.gemdosDir;   // mounts as C:; AUTO\*.PRG auto-runs
     if (!cfg.diskImage.isEmpty())
         args << "--disk-a" << cfg.diskImage;   // boot a real demo/program floppy
+    if (!cfg.diskB.isEmpty())
+        args << "--disk-b" << cfg.diskB;       // drive B (multi-disk demos)
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (cfg.headless) {

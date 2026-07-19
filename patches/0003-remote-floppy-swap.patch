@@ -1,0 +1,180 @@
+diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
+index 3b23085d..4168e481 100644
+--- a/src/debug/remotedebug.c
++++ b/src/debug/remotedebug.c
+@@ -40,6 +40,7 @@
+ #include "vars.h"
+ #include "memory.h"
+ #include "configuration.h"
++#include "floppy.h"		/* Talos B2 (F-219): runtime floppy swap for multi-disk demos */
+ #include "psg.h"
+ #include "dmaSnd.h"
+ #include "blitter.h"
+@@ -1098,6 +1099,157 @@ typedef struct
+ } rdbcommand_t;
+ 
+ /* Array of all remote debug command descriptors */
++/**
++ * Talos B2 (F-208): blitter memory-traffic trace.
++ *
++ *   blittrace on           enable + clear the trace  -> "OK"
++ *   blittrace off          disable                   -> "OK"
++ *   blittrace clear        clear without disabling    -> "OK"
++ *   blittrace              dump accumulated entries:
++ *     "OK" <sep> <count:hex>
++ *       then per entry:  <sep> addr <sep> cycle_hi <sep> cycle_lo <sep> value <sep> flags
++ *   flags bit0 = write (else read), bit1 = blit-complete marker.
++ */
++static int RemoteDebug_blittrace(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc >= 2)
++	{
++		if (strcmp(psArgs[1], "on") == 0)
++		{
++			/* optional entry limit: "blittrace on <N>" (0/absent = full buffer) */
++			uint32_t limit = 0;
++			if (nArgc >= 3)
++				read_hex32_value(psArgs[2], &limit);
++			Blitter_Trace_SetEnabled(true, limit);
++		}
++		else if (strcmp(psArgs[1], "off") == 0)
++			Blitter_Trace_SetEnabled(false, 0);
++		else if (strcmp(psArgs[1], "clear") == 0)
++			Blitter_Trace_Clear();
++		else
++			return 1;			/* unknown sub-command */
++		send_str(state, "OK");
++		return 0;
++	}
++
++	/* No sub-command: dump the accumulated trace. */
++	const BLITTER_TRACE_ENTRY* entries = Blitter_Trace_GetEntries();
++	uint32_t count = Blitter_Trace_GetCount();
++
++	send_str(state, "OK");
++	send_sep(state);
++	send_hex(state, count);
++	for (uint32_t i = 0; i < count; ++i)
++	{
++		send_sep(state);
++		send_hex(state, entries[i].addr);
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle >> 32));
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle & 0xffffffff));
++		send_sep(state);
++		send_hex(state, entries[i].value);
++		send_sep(state);
++		send_hex(state, entries[i].flags);
++	}
++	return 0;					/* ProcessBuffer appends the terminator */
++}
++
++/**
++ * Talos B2 (F-209): DMA-sound + LMC1992 EQ trace. Same shape as `blittrace`.
++ *
++ *   dmatrace on|off|clear     -> "OK"
++ *   dmatrace                  -> "OK" <sep> <count:hex>
++ *     then per entry:  <sep> cycle_hi <sep> cycle_lo <sep> kind <sep> a <sep> b
++ *   kind: 0 FRAME(start,end) 1 DRAIN(counter,0) 2 CTRL(control,mode) 3 LMC(param,value).
++ */
++static int RemoteDebug_dmatrace(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc >= 2)
++	{
++		if (strcmp(psArgs[1], "on") == 0)
++		{
++			/* optional entry limit: "dmatrace on <N>" (0/absent = full buffer) */
++			uint32_t limit = 0;
++			if (nArgc >= 3)
++				read_hex32_value(psArgs[2], &limit);
++			DmaSnd_Trace_SetEnabled(true, limit);
++		}
++		else if (strcmp(psArgs[1], "off") == 0)
++			DmaSnd_Trace_SetEnabled(false, 0);
++		else if (strcmp(psArgs[1], "clear") == 0)
++			DmaSnd_Trace_Clear();
++		else
++			return 1;
++		send_str(state, "OK");
++		return 0;
++	}
++
++	const DMASND_TRACE_ENTRY* entries = DmaSnd_Trace_GetEntries();
++	uint32_t count = DmaSnd_Trace_GetCount();
++
++	send_str(state, "OK");
++	send_sep(state);
++	send_hex(state, count);
++	for (uint32_t i = 0; i < count; ++i)
++	{
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle >> 32));
++		send_sep(state);
++		send_hex(state, (uint32_t)(entries[i].cycle & 0xffffffff));
++		send_sep(state);
++		send_hex(state, entries[i].kind);
++		send_sep(state);
++		send_hex(state, entries[i].a);
++		send_sep(state);
++		send_hex(state, entries[i].b);
++	}
++	return 0;					/* ProcessBuffer appends the terminator */
++}
++
++/**
++ * Talos B2 (F-219): change the floppy in a drive at runtime, so a multi-disk
++ * demo can be fed its next disk without a reboot. Insert calls FDC_InsertFloppy,
++ * which raises the media-change so a running program sees the new disk.
++ *
++ *   floppy <0|1> <path>    -> insert <path> into drive A(0) / B(1)   -> "OK"
++ *   floppy <0|1> none      -> eject drive A(0) / B(1)                -> "OK"
++ *
++ * The path is the rest of the line (args were split on spaces, so re-join them).
++ */
++static int RemoteDebug_floppy(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc < 3)
++		return 1;
++	int drive = atoi(psArgs[1]);
++	if (drive < 0 || drive > 1)
++		return 1;
++
++	char path[FILENAME_MAX];
++	path[0] = 0;
++	for (int i = 2; i < nArgc; ++i)
++	{
++		if (i > 2)
++			strncat(path, " ", sizeof(path) - strlen(path) - 1);
++		strncat(path, psArgs[i], sizeof(path) - strlen(path) - 1);
++	}
++
++	if (!path[0] || strcasecmp(path, "none") == 0)
++	{
++		Floppy_SetDiskFileNameNone(drive);
++		Floppy_EjectDiskFromDrive(drive);
++	}
++	else
++	{
++		if (!Floppy_SetDiskFileName(drive, path, NULL))
++			return 1;			/* image not found / unusable */
++		if (!Floppy_InsertDiskIntoDrive(drive))
++			return 1;
++	}
++	send_str(state, "OK");
++	return 0;
++}
++
+ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_status,	"status"	, true		},
+ 	{ RemoteDebug_break,	"break"		, true		},
+@@ -1120,6 +1272,9 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_ffwd,		"ffwd"		, true		},
+ 	{ RemoteDebug_memfind,	"memfind"	, true		},
+ 	{ RemoteDebug_savebin,	"savebin"	, true		},
++	{ RemoteDebug_blittrace,"blittrace"	, true		},
++	{ RemoteDebug_dmatrace,	"dmatrace"	, true		},
++	{ RemoteDebug_floppy,	"floppy"	, true		},
+ 
+ 	/* Terminator */
+ 	{ NULL, NULL }

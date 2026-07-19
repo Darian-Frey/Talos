@@ -28,7 +28,9 @@
 
 #include <QDir>
 #include <QFile>
+#include <QDialog>
 #include <QFileDialog>
+#include <QGridLayout>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -48,6 +50,7 @@
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
+#include <QPushButton>
 #include <QLineEdit>
 #include <QSlider>
 #include <QSpinBox>
@@ -197,6 +200,12 @@ void MainWindow::buildUi()
         "Load a real ST program or disk image and run it, then instrument it: "
         ".PRG/.TOS auto-run from a GEMDOS drive; .ST/.MSA/.STX/.DIM/.IPF boot as a floppy"));
     connect(m_actOpen, &QAction::triggered, this, &MainWindow::openProgram);
+
+    m_actDisks = tb->addAction(QStringLiteral("Disks…"));
+    m_actDisks->setToolTip(QStringLiteral(
+        "Drive A/B disk manager: insert / eject / hot-swap a floppy on the running "
+        "machine (multi-disk demos), or boot back to a clean desktop"));
+    connect(m_actDisks, &QAction::triggered, this, &MainWindow::manageDisks);
 
     m_fastBootBtn = new LedToolButton(this);
     m_fastBootBtn->setText(QStringLiteral("Fast boot"));
@@ -1345,6 +1354,7 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
                     updateCapabilities();
                     m_config.hatari.gemdosDir = m_rasterDir.path();
                     m_config.hatari.diskImage.clear();
+                    m_config.hatari.diskB.clear();
                     m_raster->setResult(QStringLiteral("Built RASTER.PRG — launching on ST/PAL…"), true);
                     if (m_launcher->isRunning() || m_rdb->isConnected())
                         relaunch();
@@ -1577,6 +1587,7 @@ void MainWindow::buildScrollerEffect(const QString &message, int speed)
             updateCapabilities();
             m_config.hatari.gemdosDir = m_scrollerDir.path();
             m_config.hatari.diskImage.clear();
+            m_config.hatari.diskB.clear();
             m_scroller->setResult(QStringLiteral("Built SCROLLER.PRG — launching on STE/PAL…"), true);
             if (m_launcher->isRunning() || m_rdb->isConnected())
                 relaunch();
@@ -1690,6 +1701,7 @@ void MainWindow::buildBorderEffect(BorderCodegen::Border border)
             updateCapabilities();
             m_config.hatari.gemdosDir = m_borderDir.path();
             m_config.hatari.diskImage.clear();
+            m_config.hatari.diskB.clear();
             m_borderView->setResult(
                 QStringLiteral("Built BORDER.PRG — launching on ST/PAL; watch the left border open."),
                 true);
@@ -2085,6 +2097,7 @@ void MainWindow::openProgram()
     // A new load replaces any effect / prior program / snapshot / disk.
     m_config.hatari.gemdosDir.clear();
     m_config.hatari.diskImage.clear();
+    m_config.hatari.diskB.clear();
     m_config.hatari.memStateFile.clear();
 
     if (diskExt.contains(ext)) {
@@ -2126,6 +2139,87 @@ void MainWindow::openProgram()
         relaunch();
     else
         onStartClicked();
+}
+
+void MainWindow::manageDisks()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Floppy disks — drive A / B"));
+    auto *grid = new QGridLayout(&dlg);
+
+    // Case-insensitive disk-image filter (DEMO.ST as readily as demo.st).
+    const QStringList exts = {"st", "msa", "stx", "dim", "ipf", "img", "raw", "zip"};
+    QStringList pats;
+    for (const QString &e : exts) {
+        QString g = QStringLiteral("*.");
+        for (const QChar c : e)
+            g += QStringLiteral("[%1%2]").arg(c.toLower()).arg(c.toUpper());
+        pats << g;
+    }
+    const QString filter = QStringLiteral("Disk images (%1);;All files (*)").arg(pats.join(QLatin1Char(' ')));
+
+    const bool connected = m_rdb->isConnected();
+    grid->addWidget(new QLabel(
+        connected ? QStringLiteral("Insert / eject swaps the disk on the running machine — "
+                                   "feed a multi-disk demo its next disk without a reboot.")
+                  : QStringLiteral("Not running — the drives will be set for the next launch."),
+        &dlg), 0, 0, 1, 4);
+
+    auto addRow = [&](int rowIdx, int drive, QString *cfg, const QString &name) {
+        grid->addWidget(new QLabel(QStringLiteral("Drive %1:").arg(name), &dlg), rowIdx, 0);
+        auto *lbl = new QLabel(cfg->isEmpty() ? QStringLiteral("(empty)")
+                                              : QFileInfo(*cfg).fileName(), &dlg);
+        lbl->setMinimumWidth(200);
+        grid->addWidget(lbl, rowIdx, 1);
+        auto *ins = new QPushButton(QStringLiteral("Insert…"), &dlg);
+        auto *ej = new QPushButton(QStringLiteral("Eject"), &dlg);
+        grid->addWidget(ins, rowIdx, 2);
+        grid->addWidget(ej, rowIdx, 3);
+        connect(ins, &QPushButton::clicked, &dlg, [this, &dlg, filter, cfg, lbl, drive, name, connected] {
+            const QString f = QFileDialog::getOpenFileName(
+                &dlg, QStringLiteral("Insert disk into drive %1").arg(name), QString(), filter);
+            if (f.isEmpty())
+                return;
+            *cfg = f;
+            lbl->setText(QFileInfo(f).fileName());
+            if (connected)
+                m_rdb->sendCommand(QStringLiteral("floppy %1 %2").arg(drive).arg(f).toUtf8());
+            statusBar()->showMessage(
+                QStringLiteral("Drive %1: %2%3").arg(name, QFileInfo(f).fileName(),
+                    connected ? QStringLiteral(" — swapped live") : QStringLiteral(" — on next launch")),
+                5000);
+        });
+        connect(ej, &QPushButton::clicked, &dlg, [this, cfg, lbl, drive, name, connected] {
+            cfg->clear();
+            lbl->setText(QStringLiteral("(empty)"));
+            if (connected)
+                m_rdb->sendCommand(QStringLiteral("floppy %1 none").arg(drive).toUtf8());
+            statusBar()->showMessage(QStringLiteral("Drive %1 ejected").arg(name), 4000);
+        });
+    };
+    addRow(1, 0, &m_config.hatari.diskImage, QStringLiteral("A"));
+    addRow(2, 1, &m_config.hatari.diskB, QStringLiteral("B"));
+
+    auto *desktop = new QPushButton(QStringLiteral("Boot to clean desktop"), &dlg);
+    desktop->setToolTip(QStringLiteral("Eject everything and relaunch to a bare TOS desktop"));
+    connect(desktop, &QPushButton::clicked, &dlg, [this, &dlg] {
+        m_config.hatari.gemdosDir.clear();
+        m_config.hatari.diskImage.clear();
+        m_config.hatari.diskB.clear();
+        m_config.hatari.memStateFile.clear();
+        dlg.accept();
+        if (m_launcher->isRunning() || m_rdb->isConnected())
+            relaunch();
+        else
+            onStartClicked();
+        statusBar()->showMessage(QStringLiteral("Booting to a clean desktop…"), 5000);
+    });
+    grid->addWidget(desktop, 3, 0, 1, 2);
+    auto *closeBtn = new QPushButton(QStringLiteral("Close"), &dlg);
+    connect(closeBtn, &QPushButton::clicked, &dlg, &QDialog::accept);
+    grid->addWidget(closeBtn, 3, 3);
+
+    dlg.exec();
 }
 
 void MainWindow::readMfp()

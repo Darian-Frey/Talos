@@ -143,6 +143,7 @@ private:
     void updateReconstruct();   // F-218: rebuild the register-reconstruction panel
     void readMfp();             // Phase 6: read + decode the MFP register block
     void openProgram();         // load + run a real ST program / disk image
+    void manageDisks();         // drive A/B disk manager: hot-swap, eject, desktop
     void compareMachines(MachineType a, MachineType b);   // Phase 6: A/B comparison
     void populateTimeline();
     void updateBudget();        // recompute the per-scanline cycle-budget gauge
@@ -192,6 +193,7 @@ private:
     QAction *m_actSaveState = nullptr;
     QAction *m_actLoadState = nullptr;
     QAction *m_actOpen = nullptr;
+    QAction *m_actDisks = nullptr;
     LedToolButton *m_fastBootBtn = nullptr;   // checkable + retro LED: fast-forward the boot
     QAction *m_actBreak = nullptr;
     QAction *m_actRun = nullptr;

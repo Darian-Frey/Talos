@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), Phase 0 scaffold.
-> **Last reviewed:** 2026-07-11
-> **Why this status:** First B2 patch landed in Phase 3 (`0001`, the Blitter tap). Further patches added only where a feature proves B1 cannot serve it (D-005).
+> **Last reviewed:** 2026-07-19
+> **Why this status:** First B2 patch landed in Phase 3 (`0001`, the Blitter tap). Further patches added only where a feature proves B1 cannot serve it (D-005) — `0003` (runtime floppy swap) is the newest.
 
 ---
 
@@ -38,3 +38,10 @@ Maintained as an ordered series applied on top of the pinned fork commit by
 
 Both rings hold up to 65536 entries; the `on [N]` argument caps a capture below
 that (the client's Depth control), and the client flags a truncated capture.
+
+- **`0003-remote-floppy-swap.patch`** (F-219) — the one non-tap patch: a control
+  command, not a data stream. Adds `floppy <0|1> <path|none>` to the remote
+  command list (`Floppy_SetDiskFileName` + `Floppy_InsertDiskIntoDrive`, which
+  raises the FDC media-change), so a **multi-disk demo can be fed its next disk at
+  runtime without a reboot**. B1 has no way to change a floppy while running
+  (D-005), so this is justified; it is surgical (one command, 1 file, +~45 lines).

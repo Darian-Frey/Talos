@@ -139,6 +139,24 @@ b=value). Taps: `dmaSnd.c` `DmaSnd_FIFO_Refill` (drain), `DmaSnd_StartNewFrame`
 (frame), `DmaSnd_SoundControl_WriteWord` (control), the Microwire decode switch
 (EQ); `cycle` is `CyclesGlobalClockCounter`.
 
+### `floppy` — runtime floppy swap (F-219, `patches/0003-*`)
+
+A control command (not a data tap): change the disk in a drive on the running
+machine, so a multi-disk demo can be fed its next disk without a reboot. Calls
+`Floppy_SetDiskFileName` + `Floppy_InsertDiskIntoDrive`, which raises the FDC
+media-change so the program notices.
+
+| Form | Effect | Reply |
+|---|---|---|
+| `floppy 0 <path>` | insert `<path>` into drive A | `OK` |
+| `floppy 1 <path>` | insert `<path>` into drive B | `OK` |
+| `floppy <0\|1> none` | eject that drive | `OK` |
+| bad drive / missing image | — | `NG 1` |
+
+The path is the rest of the line (the handler re-joins space-split args, so paths
+with spaces work). Validated end to end 2026-07-19: swapping a bootable disk into
+drive A then cold-resetting boots the swapped disk.
+
 ## Function seam noted for the B2 video tap
 
 `Video_GetPosition(&frameCycles, &lineNumber?, &lineCycles)` in `src/video.c` is

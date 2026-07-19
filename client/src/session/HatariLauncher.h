@@ -35,10 +35,12 @@ public:
         // Optional GEMDOS drive directory (mounted C:) — used to auto-run an
         // effect (or a loaded .PRG) from its AUTO folder (tests/effects/disk).
         QString gemdosDir;
-        // Optional floppy disk image in drive A (--disk-a) — used to boot a real
-        // demo/program disk (.st/.msa/.stx/.dim/.ipf/.zip). Boots the disk's
-        // bootsector if it is bootable; else TOS comes up with A: mounted.
+        // Optional floppy disk images in drive A (--disk-a) and B (--disk-b) — used
+        // to boot a real demo/program disk (.st/.msa/.stx/.dim/.ipf/.zip). Boots
+        // the disk's bootsector if it is bootable; else TOS comes up with A: mounted.
+        // Disks can also be swapped at runtime (patched `floppy` command, F-219).
         QString diskImage;
+        QString diskB;
         // Ignore the user's ~/.config/hatari/hatari.cfg by launching with an
         // empty config, so a stray floppy setting can't hijack the boot drive
         // (BUG-001). On by default for reproducible runs.
