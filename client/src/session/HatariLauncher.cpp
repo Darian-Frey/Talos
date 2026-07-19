@@ -56,6 +56,8 @@ bool HatariLauncher::launch(const Config &cfg)
     args << "--machine" << cfg.machine
          << "--tos" << cfg.tosImage
          << "--sound" << "off";
+    if (cfg.stRamSizeKB > 0)
+        args << "--memsize" << QString::number(cfg.stRamSizeKB);   // KiB (>14 => KiB, not MiB)
     if (cfg.cpuClock == 8 || cfg.cpuClock == 16)
         args << "--cpuclock" << QString::number(cfg.cpuClock);   // Mega STE 8/16 MHz (F-210)
     if (cfg.monoMonitor)
@@ -70,6 +72,8 @@ bool HatariLauncher::launch(const Config &cfg)
         args << "--statusbar" << "off";
     if (!cfg.gemdosDir.isEmpty())
         args << "-d" << cfg.gemdosDir;   // mounts as C:; AUTO\*.PRG auto-runs
+    if (!cfg.diskImage.isEmpty())
+        args << "--disk-a" << cfg.diskImage;   // boot a real demo/program floppy
 
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     if (cfg.headless) {

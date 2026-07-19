@@ -87,6 +87,7 @@ private slots:
     void loadState();           // F-217: relaunch restoring a saved snapshot
     void onMachineChanged(int index);
     void onRegionChanged(int index);
+    void onMemoryChanged(int index);
     void onLanguageChanged(int index);
     void onClockChanged(int index);   // Mega STE 8/16 MHz (F-210) -> relaunch
     void onConnected();
@@ -141,6 +142,7 @@ private:
     void recomputeWriteMarks(QSize frameSize);
     void updateReconstruct();   // F-218: rebuild the register-reconstruction panel
     void readMfp();             // Phase 6: read + decode the MFP register block
+    void openProgram();         // load + run a real ST program / disk image
     void compareMachines(MachineType a, MachineType b);   // Phase 6: A/B comparison
     void populateTimeline();
     void updateBudget();        // recompute the per-scanline cycle-budget gauge
@@ -171,6 +173,7 @@ private:
     QTemporaryDir m_rasterDir;            // holds the generated .s + AUTO/RASTER.PRG
     QTemporaryDir m_scrollerDir;          // holds the generated scroller .s + AUTO/SCROLLER.PRG
     QTemporaryDir m_borderDir;            // holds the generated border .s + AUTO/BORDER.PRG
+    QTemporaryDir m_loadDir;              // GEMDOS drive for a loaded .PRG/.TOS (AUTO/PROG.*)
     QProcess *m_rasterProc = nullptr;     // vasm / verify subprocess (one at a time)
     QTableWidget *m_regTable = nullptr;
     QTimer *m_liveTimer = nullptr;
@@ -178,6 +181,7 @@ private:
     QString m_shotPath;
 
     QComboBox *m_machineCombo = nullptr;
+    QComboBox *m_memCombo = nullptr;   // ST RAM size (--memsize)
     QComboBox *m_languageCombo = nullptr;
     QComboBox *m_regionCombo = nullptr;
     QComboBox *m_clockCombo = nullptr;   // CPU clock 8/16 MHz (dual-speed machines only)
@@ -187,6 +191,7 @@ private:
     QAction *m_actStop = nullptr;
     QAction *m_actSaveState = nullptr;
     QAction *m_actLoadState = nullptr;
+    QAction *m_actOpen = nullptr;
     LedToolButton *m_fastBootBtn = nullptr;   // checkable + retro LED: fast-forward the boot
     QAction *m_actBreak = nullptr;
     QAction *m_actRun = nullptr;

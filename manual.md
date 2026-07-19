@@ -1,9 +1,9 @@
 # Talos — User Manual
 
 > **Status:** Active
-> **Provenance:** Claude (implementer), written 2026-07-16 from the client source (`client/`) and harnesses (`harness/`).
-> **Last reviewed:** 2026-07-16
-> **Why this status:** Practical how-to for the client through Phase 4 (M0–M4 + F-217). For the design rationale read `CLAUDE.md`, `ARCHITECTURE.md` and `DECISIONS.md`; for the authoritative feature/bug state read `REGISTERS.md`, `BUGS.md` and `git log`.
+> **Provenance:** Claude (implementer), written 2026-07-16 from the client source (`client/`) and harnesses (`harness/`); extended for the Phase 6 tabs 2026-07-19.
+> **Last reviewed:** 2026-07-19
+> **Why this status:** Practical how-to for the client through Phase 6 (M0–M4 + F-217, plus the Phase 6 tabs §7c–§7i and the corpus runner §8). For the design rationale read `CLAUDE.md`, `ARCHITECTURE.md` and `DECISIONS.md`; for the authoritative feature/bug state read `REGISTERS.md`, `BUGS.md` and `git log`.
 
 ---
 
@@ -94,6 +94,28 @@ build/debug/bin/talos --machine ste --region pal --effect tests/effects/disk
 
 ---
 
+## 3a. Loading a demo or program
+
+Talos isn't only for effects you build in it — you can point its instrumentation
+(beam overlay, register-write capture, disassembly, MFP, cycle counters…) at any
+ST program or demo. Toolbar **Open…**, then pick a file:
+
+- **`.PRG` / `.TOS`** — staged on a GEMDOS drive (mounted `C:`) under `AUTO\` and
+  **auto-run** on boot, so the program is up and instrumentable immediately.
+  (`.TTP` / `.APP` land on `C:` to run from the ST desktop by hand.)
+- **`.ST` / `.MSA` / `.STX` / `.DIM` / `.IPF` / `.ZIP`** — mounted as a floppy in
+  **drive A** and **booted**: a bootable demo disk runs its own bootsector; a
+  data disk brings up the desktop with `A:` available.
+
+The load **relaunches** on the current **machine / region** (set those first — a
+demo may need a specific model), boots in **real time** (not fast-boot) so you can
+watch it, and replaces any built effect, loaded program or snapshot. Then use
+**Break / Run→Line / Capture / Trace** as usual to see what it's doing. Single-file
+programs work directly; multi-file programs are best run from their disk image.
+Sound is off (Talos runs Hatari muted for reproducible instrumentation).
+
+---
+
 ## 4. The interface
 
 ### The toolbar (top, left → right)
@@ -101,6 +123,9 @@ build/debug/bin/talos --machine ste --region pal --effect tests/effects/disk
 **Session / machine**
 - **Machine** — 520/1040 ST · Mega ST · STE · Mega STE. Changing it relaunches
   Hatari on that machine.
+- **RAM** — ST memory size: 512 KB · 1 MB · 2 MB · 4 MB (`--memsize`). 512 KB is
+  an authentic 520 ST; **1 MB** (the default) runs most demos; pick more for the
+  memory-hungry ones. Changing it relaunches (RAM size is fixed at boot).
 - **Language** — EmuTOS language (also sets the country/region EmuTOS boots in).
 - **Region** — video region, 50 Hz PAL / 60 Hz NTSC. Talos also *reads back* the
   real region from `$ff820a`, so the overlay geometry follows reality even if an
@@ -114,6 +139,10 @@ build/debug/bin/talos --machine ste --region pal --effect tests/effects/disk
 - **Save state** — snapshot the whole machine to a file (park a prototype, or seed
   a validation run). Works while running or stopped.
 - **Load state** — relaunch restoring a saved snapshot; this **skips the boot**.
+- **Open…** — load a **real ST program or disk image** and run it, so you can point
+  Talos's instrumentation at demos and programs you didn't build (§3a). `.PRG` /
+  `.TOS` auto-run from a GEMDOS drive; `.ST` / `.MSA` / `.STX` / `.DIM` / `.IPF`
+  boot as a floppy in drive A.
 - **Fast boot** (toggle with a red LED) — fast-forward an effect's ~14 s boot then
   drop back to normal speed once the effect is detected running (BUG-007). The LED
   glows red while fast boot is on; uncheck it to watch the boot at real speed.
@@ -190,6 +219,17 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 - **ST picture** — view DEGAS / NEOchrome / Tiny pictures (§7b).
 - **Cycle budget** — the per-scanline CPU cycle budget for the authored raster /
   bands effect, with the 8/16 MHz Mega STE budgets (§7c).
+- **Border walkthrough** — the four ST borders on a 2-D screen diagram; the left
+  border is runnable (§7d).
+- **Sync scroll** — the STF resolution-switch fine-scroll trick, cycle→pixel table
+  (§7e).
+- **Reconstruct** — the taken frame beside a screen rebuilt from the captured
+  register writes (F-218, §7f).
+- **Disassembly** — trace the code around PC with where each instruction lands on
+  the beam (§7g).
+- **MFP** — the 68901 timers and interrupt controller, decoded live (§7h).
+- **A/B compare** — the last-built effect on two machines side by side, with a
+  per-scanline diff (§7i).
 
 ---
 

@@ -148,6 +148,14 @@ void MainWindow::buildUi()
         m_machineCombo->addItem(Machines::info(t).name);
     m_machineCombo->setToolTip(QStringLiteral("Machine type"));
     tb->addWidget(m_machineCombo);
+    m_memCombo = new QComboBox(this);
+    m_memCombo->addItem(QStringLiteral("512 KB"), 512);
+    m_memCombo->addItem(QStringLiteral("1 MB"), 1024);
+    m_memCombo->addItem(QStringLiteral("2 MB"), 2048);
+    m_memCombo->addItem(QStringLiteral("4 MB"), 4096);
+    m_memCombo->setCurrentIndex(1);   // 1 MB — runs most demos; 512 KB = an authentic 520
+    m_memCombo->setToolTip(QStringLiteral("ST RAM size (--memsize)"));
+    tb->addWidget(m_memCombo);
     m_languageCombo = new QComboBox(this);
     for (Language l : Languages::all())
         m_languageCombo->addItem(Languages::info(l).name);
@@ -183,6 +191,12 @@ void MainWindow::buildUi()
     m_actLoadState->setToolTip(
         QStringLiteral("F-217: relaunch restoring a saved snapshot (skips boot)"));
     connect(m_actLoadState, &QAction::triggered, this, &MainWindow::loadState);
+
+    m_actOpen = tb->addAction(QStringLiteral("Open…"));
+    m_actOpen->setToolTip(QStringLiteral(
+        "Load a real ST program or disk image and run it, then instrument it: "
+        ".PRG/.TOS auto-run from a GEMDOS drive; .ST/.MSA/.STX/.DIM/.IPF boot as a floppy"));
+    connect(m_actOpen, &QAction::triggered, this, &MainWindow::openProgram);
 
     m_fastBootBtn = new LedToolButton(this);
     m_fastBootBtn->setText(QStringLiteral("Fast boot"));
@@ -524,6 +538,8 @@ void MainWindow::buildUi()
             this, &MainWindow::onLanguageChanged);
     connect(m_regionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onRegionChanged);
+    connect(m_memCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onMemoryChanged);
     connect(m_clockCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onClockChanged);
     reconcileRegion();       // also calls updateCapabilities()
@@ -542,6 +558,7 @@ void MainWindow::onStartClicked()
         // Only dual-speed machines get an explicit clock; others use the default.
         m_config.hatari.cpuClock =
             Machines::info(m_machine).dualSpeed ? m_clockCombo->currentData().toInt() : 0;
+        m_config.hatari.stRamSizeKB = m_memCombo->currentData().toInt();
         m_config.hatari.country = Languages::country(m_language, m_region);
         // Fast-forward the ~14 s boot when running an AUTO effect; turned off once
         // the effect is detected running (BUG-007). No boot to skip when restoring
@@ -642,6 +659,13 @@ void MainWindow::onRegionChanged(int index)
     reconcileRegion();   // a language with no NTSC variant snaps back to PAL
     updateBudget();      // 512 (PAL) vs 508 (NTSC) cycles/line
     updateReconstruct(); // F-218 geometry follows the region
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+}
+
+void MainWindow::onMemoryChanged(int)
+{
+    // RAM size only takes effect at boot, so a change relaunches the machine.
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -1320,6 +1344,7 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
                     }
                     updateCapabilities();
                     m_config.hatari.gemdosDir = m_rasterDir.path();
+                    m_config.hatari.diskImage.clear();
                     m_raster->setResult(QStringLiteral("Built RASTER.PRG — launching on ST/PAL…"), true);
                     if (m_launcher->isRunning() || m_rdb->isConnected())
                         relaunch();
@@ -1551,6 +1576,7 @@ void MainWindow::buildScrollerEffect(const QString &message, int speed)
             }
             updateCapabilities();
             m_config.hatari.gemdosDir = m_scrollerDir.path();
+            m_config.hatari.diskImage.clear();
             m_scroller->setResult(QStringLiteral("Built SCROLLER.PRG — launching on STE/PAL…"), true);
             if (m_launcher->isRunning() || m_rdb->isConnected())
                 relaunch();
@@ -1663,6 +1689,7 @@ void MainWindow::buildBorderEffect(BorderCodegen::Border border)
             }
             updateCapabilities();
             m_config.hatari.gemdosDir = m_borderDir.path();
+            m_config.hatari.diskImage.clear();
             m_borderView->setResult(
                 QStringLiteral("Built BORDER.PRG — launching on ST/PAL; watch the left border open."),
                 true);
@@ -2024,6 +2051,81 @@ void MainWindow::compareMachines(MachineType a, MachineType b)
                 proc->deleteLater();
             });
     proc->start(QStringLiteral("python3"), args);
+}
+
+void MainWindow::openProgram()
+{
+    if (m_config.attachOnly) {
+        statusBar()->showMessage(
+            QStringLiteral("Can't load a program into an attached Hatari."), 5000);
+        return;
+    }
+    // Qt matches name-filter globs case-sensitively on Linux, so build each
+    // pattern case-insensitively (*.[sS][tT]) — DEMO.ST shows as readily as .st.
+    const QStringList exts = {"prg", "tos", "ttp", "app", "gtp",
+                              "st", "msa", "stx", "dim", "ipf", "img", "raw", "zip"};
+    QStringList pats;
+    for (const QString &e : exts) {
+        QString g = QStringLiteral("*.");
+        for (const QChar c : e)
+            g += QStringLiteral("[%1%2]").arg(c.toLower()).arg(c.toUpper());
+        pats << g;
+    }
+    const QString file = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Open ST program or disk image"), QString(),
+        QStringLiteral("ST programs & disks (%1);;All files (*)").arg(pats.join(QLatin1Char(' '))));
+    if (file.isEmpty())
+        return;
+
+    const QFileInfo fi(file);
+    const QString ext = fi.suffix().toLower();
+    static const QStringList diskExt = {"st", "msa", "stx", "dim", "ipf", "img", "raw", "zip"};
+    static const QStringList autoExt = {"prg", "tos"};
+
+    // A new load replaces any effect / prior program / snapshot / disk.
+    m_config.hatari.gemdosDir.clear();
+    m_config.hatari.diskImage.clear();
+    m_config.hatari.memStateFile.clear();
+
+    if (diskExt.contains(ext)) {
+        m_config.hatari.diskImage = file;   // boot the floppy (bootsector if bootable)
+        statusBar()->showMessage(
+            QStringLiteral("Disk A: %1 — booting…").arg(fi.fileName()), 6000);
+    } else {
+        // A program: stage it on a fresh GEMDOS drive so TOS auto-runs it from
+        // AUTO\ (.prg/.tos) or shows it on the desktop to run by hand.
+        if (!m_loadDir.isValid()) {
+            statusBar()->showMessage(QStringLiteral("No scratch directory for the program."), 5000);
+            return;
+        }
+        QDir root(m_loadDir.path());
+        root.removeRecursively();               // clear any previously-loaded program
+        QDir().mkpath(m_loadDir.path());
+        const bool autoRun = autoExt.contains(ext);
+        if (autoRun)
+            root.mkpath(QStringLiteral("AUTO"));
+        // GEMDOS is 8.3: stage under a safe name that always mounts/auto-runs.
+        const QString target = autoRun
+            ? root.filePath(QStringLiteral("AUTO/PROG.%1").arg(ext.toUpper()))
+            : root.filePath(QStringLiteral("PROG.%1").arg(ext.toUpper()));
+        QFile::remove(target);
+        if (!QFile::copy(file, target)) {
+            statusBar()->showMessage(
+                QStringLiteral("Could not stage %1.").arg(fi.fileName()), 5000);
+            return;
+        }
+        m_config.hatari.gemdosDir = m_loadDir.path();
+        statusBar()->showMessage(
+            autoRun ? QStringLiteral("C:\\AUTO\\%1 — auto-running…").arg(fi.fileName())
+                    : QStringLiteral("C:\\%1 — run it from the ST desktop.").arg(fi.fileName()),
+            8000);
+    }
+
+    // Loaded content should boot in real time so it can be watched (no fast-boot).
+    if (m_launcher->isRunning() || m_rdb->isConnected())
+        relaunch();
+    else
+        onStartClicked();
 }
 
 void MainWindow::readMfp()
