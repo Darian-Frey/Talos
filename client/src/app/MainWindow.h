@@ -113,6 +113,10 @@ private slots:
     void onCaptureClicked();
     void captureBlitTraffic();   // F-208: enable trace, run a window, dump + show
     void captureDmaSound();      // F-209: enable trace, run a window, dump + show
+    // Asm for the raster workspace's current mode (empty if its input is empty).
+    QString rasterAsmForMode(const QVector<RasterCodegen::Bar> &bars,
+                             const QVector<RasterCodegen::Bar> &colBars,
+                             const QVector<quint16> &cols) const;
     void buildRasterEffect(const QVector<RasterCodegen::Bar> &bars);   // F-212 codegen+run
     void verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 round-trip
     void exportRasterEffect(const QVector<RasterCodegen::Bar> &bars);  // F-212 asm + sequence

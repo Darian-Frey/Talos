@@ -1352,14 +1352,37 @@ QString repoRootFrom(const QString &hatariBinary)
 }
 }   // namespace
 
+QString MainWindow::rasterAsmForMode(const QVector<RasterCodegen::Bar> &bars,
+                                     const QVector<RasterCodegen::Bar> &colBars,
+                                     const QVector<quint16> &cols) const
+{
+    switch (m_raster->mode()) {
+    case RasterWorkspace::Bars:
+        return bars.isEmpty() ? QString() : RasterCodegen::generate(bars);
+    case RasterWorkspace::Bands:
+        return colBars.isEmpty() ? QString() : RasterCodegen::generateColumns(colBars);
+    case RasterWorkspace::Copper:
+        return bars.isEmpty() ? QString()
+                              : RasterCodegen::generateCopper(bars, m_raster->copperSpeed());
+    case RasterWorkspace::Cycle:
+        return cols.isEmpty() ? QString() : RasterCodegen::generateColourCycle(cols);
+    }
+    return QString();
+}
+
 void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
-    const bool bands = m_raster->mode() == RasterWorkspace::Bands;
+    const auto mode = m_raster->mode();
     const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
-    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
-        m_raster->setResult(QStringLiteral("Add at least one %1 first.")
-                                .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
-                            false);
+    const QVector<quint16> cols = m_raster->colours();
+    const QString asmText = rasterAsmForMode(bars, colBars, cols);
+    if (asmText.isEmpty()) {
+        m_raster->setResult(
+            QStringLiteral("Add at least one %1 first.")
+                .arg(mode == RasterWorkspace::Bands ? QStringLiteral("band")
+                     : mode == RasterWorkspace::Cycle ? QStringLiteral("colour")
+                                                      : QStringLiteral("bar")),
+            false);
         return;
     }
     const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
@@ -1380,8 +1403,7 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         m_raster->setResult(QStringLiteral("could not write raster.s"), false);
         return;
     }
-    f.write((bands ? RasterCodegen::generateColumns(colBars)
-                   : RasterCodegen::generate(bars)).toUtf8());
+    f.write(asmText.toUtf8());
     f.close();
 
     m_raster->setBusy(true);
@@ -1421,55 +1443,88 @@ void MainWindow::buildRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 
 void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
-    const bool bands = m_raster->mode() == RasterWorkspace::Bands;
+    const auto mode = m_raster->mode();
     const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
-    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
-        m_raster->setResult(QStringLiteral("Add at least one %1 first.")
-                                .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
-                            false);
+    const QVector<quint16> cols = m_raster->colours();
+    const QString asmText = rasterAsmForMode(bars, colBars, cols);
+    if (asmText.isEmpty()) {
+        m_raster->setResult(QStringLiteral("Add at least one bar / band / colour first."), false);
         return;
     }
-    if (bands && colBars.size() < 2) {
+    if (mode == RasterWorkspace::Bands && colBars.size() < 2) {
         m_raster->setResult(QStringLiteral("Bands verify needs 2+ bands (to check boundaries)."),
                             false);
         return;
     }
     const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
-    const QString tool = repo + (bands ? QStringLiteral("/harness/intraline_split.py")
-                                       : QStringLiteral("/harness/raster_roundtrip.py"));
-    if (!QFileInfo::exists(tool)) {
-        m_raster->setResult(QStringLiteral("verify harness not found: %1").arg(tool), false);
-        return;
+    const bool animated = (mode == RasterWorkspace::Copper || mode == RasterWorkspace::Cycle);
+
+    QStringList args;
+    QString okMsg;
+    if (animated) {
+        // The animated codegens live in C++, so the harness assembles our stub.
+        if (!m_rasterDir.isValid()) {
+            m_raster->setResult(QStringLiteral("no scratch directory"), false);
+            return;
+        }
+        const QString srcPath = m_rasterDir.filePath(QStringLiteral("raster.s"));
+        QFile f(srcPath);
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            m_raster->setResult(QStringLiteral("could not write raster.s"), false);
+            return;
+        }
+        f.write(asmText.toUtf8());
+        f.close();
+        const QString tool = repo + QStringLiteral("/harness/anim_check.py");
+        if (!QFileInfo::exists(tool)) {
+            m_raster->setResult(QStringLiteral("verify harness not found: %1").arg(tool), false);
+            return;
+        }
+        args = {tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                QStringLiteral("--tos"), m_config.hatari.tosImage,
+                QStringLiteral("--asm"), srcPath, QStringLiteral("--mode"),
+                mode == RasterWorkspace::Copper ? QStringLiteral("copper") : QStringLiteral("cycle")};
+        okMsg = mode == RasterWorkspace::Copper
+                    ? QStringLiteral("Verified ✓ — the copper bars scroll each frame")
+                    : QStringLiteral("Verified ✓ — the palette cycles each frame");
+    } else {
+        const bool bands = mode == RasterWorkspace::Bands;
+        const QString tool = repo + (bands ? QStringLiteral("/harness/intraline_split.py")
+                                           : QStringLiteral("/harness/raster_roundtrip.py"));
+        if (!QFileInfo::exists(tool)) {
+            m_raster->setResult(QStringLiteral("verify harness not found: %1").arg(tool), false);
+            return;
+        }
+        args = {tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
+                QStringLiteral("--tos"), m_config.hatari.tosImage};
+        if (bands) {
+            QStringList bc;   // boundary columns (leftmost band fills from the edge)
+            for (int i = 1; i < colBars.size(); ++i)
+                bc << QString::number(colBars[i].line);
+            args << QStringLiteral("--cols") << bc.join(QLatin1Char(','));
+            okMsg = QStringLiteral("Verified ✓ — band boundaries land at their columns");
+        } else {
+            for (const auto &b : bars)
+                args << QStringLiteral("--bar")
+                     << QStringLiteral("%1:%2").arg(b.line).arg(b.colour, 0, 16);
+            okMsg = QStringLiteral("Verified ✓ — authored bars reproduced in stock Hatari");
+        }
     }
+
     // The harness launches its own Hatari on the fixed port, so free ours first.
     if (m_launcher->isRunning() || m_rdb->isConnected())
         doStop();
 
-    QStringList args{tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
-                     QStringLiteral("--tos"), m_config.hatari.tosImage};
-    if (bands) {
-        // Boundary columns (the leftmost band fills from the edge, so skip it).
-        QStringList cols;
-        for (int i = 1; i < colBars.size(); ++i)
-            cols << QString::number(colBars[i].line);
-        args << QStringLiteral("--cols") << cols.join(QLatin1Char(','));
-    } else {
-        for (const auto &b : bars)
-            args << QStringLiteral("--bar")
-                 << QStringLiteral("%1:%2").arg(b.line).arg(b.colour, 0, 16);
-    }
-
     m_raster->setBusy(true);
-    m_raster->setResult(QStringLiteral("Verifying on Hatari (headless, ~15 s)…"), true);
+    m_raster->setResult(QStringLiteral("Verifying on Hatari (headless)…"), true);
     auto *proc = new QProcess(this);
     connect(proc, &QProcess::finished, this,
-            [this, proc, bands](int code, QProcess::ExitStatus) {
+            [this, proc, okMsg](int code, QProcess::ExitStatus) {
                 m_raster->setBusy(false);
                 const QString out = QString::fromUtf8(proc->readAllStandardOutput());
                 const bool ok = (code == 0) && out.contains(QStringLiteral("RESULT: PASS"));
                 m_raster->setResult(
-                    ok ? (bands ? QStringLiteral("Verified ✓ — band boundaries land at their columns")
-                                : QStringLiteral("Verified ✓ — authored bars reproduced in stock Hatari"))
+                    ok ? okMsg
                        : QStringLiteral("Verify FAILED — %1").arg(out.section('\n', -2).trimmed()),
                     ok);
                 proc->deleteLater();
@@ -1481,10 +1536,10 @@ void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
 {
     const bool bands = m_raster->mode() == RasterWorkspace::Bands;
     const QVector<RasterCodegen::Bar> colBars = m_raster->columnBars();
-    if ((bands && colBars.isEmpty()) || (!bands && bars.isEmpty())) {
-        m_raster->setResult(QStringLiteral("Add at least one %1 first.")
-                                .arg(bands ? QStringLiteral("band") : QStringLiteral("bar")),
-                            false);
+    const QVector<quint16> cols = m_raster->colours();
+    const QString asmText = rasterAsmForMode(bars, colBars, cols);
+    if (asmText.isEmpty()) {
+        m_raster->setResult(QStringLiteral("Add at least one bar / band / colour first."), false);
         return;
     }
     const QString dir = QFileDialog::getExistingDirectory(
@@ -1498,8 +1553,7 @@ void MainWindow::exportRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         m_raster->setResult(QStringLiteral("could not write to %1").arg(dir), false);
         return;
     }
-    s.write((bands ? RasterCodegen::generateColumns(colBars)
-                   : RasterCodegen::generate(bars)).toUtf8());
+    s.write(asmText.toUtf8());
     s.close();
 
     // 2. The register sequence (portable data form): $ff8240 writes tagged with

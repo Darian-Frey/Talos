@@ -236,7 +236,8 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
   reaches them (▶ plays the sweep). See §5, "Replay a frame in time".
 - **Blitter traffic** — the F-208 Blitter trace.
 - **DMA sound / EQ** — the F-209 DMA-sound drain + LMC1992 EQ view.
-- **Raster workspace** — author raster-bar / vertical-band effects (§6).
+- **Raster workspace** — author raster bars, vertical bands, animated copper bars
+  and palette colour-cycling (§6).
 - **Scroller workspace** — author an STE hardware fine-scroll scroller (§7).
 - **Spectrum 512** — import/convert a 512-colour picture and visualise its
   per-scanline palette storm (§7a).
@@ -286,7 +287,7 @@ to bring it back without re-booting.
 
 ---
 
-## 6. Authoring raster bars & vertical bands (Raster workspace)
+## 6. Authoring raster effects (Raster workspace)
 
 Open the **Raster workspace** tab. Pick a **mode**:
 
@@ -296,16 +297,27 @@ Open the **Raster workspace** tab. Pick a **mode**:
 - **Vertical bands (intra-line, HBL-synced)** — colours packed across each line →
   vertical bands (Spectrum-512-lite). The first column is now a **framebuffer
   column (0–831)**; the lowest-column colour fills from the left edge.
+- **Copper bars (animated, scrolling)** — the same bar table as Bars, but the bars
+  **scroll down every frame**. Set the **scroll speed** (px/frame, the spinbox that
+  appears in this mode) and Build. (Reuses the proven per-line timing — the bars
+  just animate.)
+- **Colour cycle (palette rotation)** — the **colour column** (up to 16 entries,
+  top-to-bottom) becomes the palette, painted as a 16-index stripe ramp and
+  **rotated every frame** so the colours flow across the screen.
 
 Controls:
 - **＋ Bar** / **－** — add/remove a row. You can also **click the framebuffer** to
-  place a bar (Bars mode) or a band boundary at that column (Bands mode).
+  place a bar (Bars/Copper) or a band boundary at that column (Bands mode).
+- **Fill ▾** — one-click patterns for the bar table: a **Gradient** (deep blue →
+  warm white), a **Rainbow** hue-sweep, or **Mirror current** (reflect the bars
+  about the centre). Handy starting points for Bars/Copper.
 - Edit a colour cell (`$0rgb` hex) and the row recolours to match.
 - **Build & Run** — codegen → assemble with `vasm` → relaunch Hatari on ST/PAL
   running the effect (a live preview).
-- **Verify on Hatari** — run the exported stub through the headless round-trip
-  harness (`raster_roundtrip.py` for bars, `intraline_split.py` for bands) and
-  report pass/fail. Bands verify needs ≥2 bands.
+- **Verify on Hatari** — run the effect headless and report pass/fail:
+  `raster_roundtrip.py` (bars), `intraline_split.py` (bands), or `anim_check.py`
+  (Copper/Cycle — confirms it animates; Copper also that the bars scroll). Bands
+  verify needs ≥2 bands.
 - **Export…** — write `raster.s` (the asm stub), `raster.json` (the portable
   register sequence) and an assembled `RASTER.PRG` to a folder you choose. The
   stub *is* the export artefact — it reproduces the effect by construction in

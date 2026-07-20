@@ -73,6 +73,174 @@ QString generate(QVector<Bar> bars, int pad, int delay, int total)
         .arg(tab);
 }
 
+QString generateCopper(QVector<Bar> bars, int speed)
+{
+    if (speed < 1)
+        speed = 1;
+    std::sort(bars.begin(), bars.end(),
+              [](const Bar &a, const Bar &b) { return a.line < b.line; });
+    const int total = kVisibleLines;
+    QVector<quint16> colours(total, 0x000);
+    for (int line = 0; line < total; ++line)
+        for (const Bar &b : bars)
+            if (line >= b.line)
+                colours[line] = b.colour;
+
+    // Doubled table so the animated read window (offset..offset+total-1) never wraps.
+    QString tab;
+    for (int i = 0; i < total * 2; i += 8) {
+        QStringList row;
+        for (int j = 0; j < 8 && i + j < total * 2; ++j)
+            row << QStringLiteral("$%1").arg(colours[(i + j) % total], 3, 16, QLatin1Char('0'));
+        tab += QStringLiteral("\tdc.w\t") + row.join(QLatin1Char(',')) + QLatin1Char('\n');
+    }
+
+    return QStringLiteral(R"(; copper.s — Talos generated animated raster bars (F-212). Do not hand-edit.
+IERA    equ $fffffa07
+IERB    equ $fffffa09
+PAL0    equ $ffff8240
+    text
+start:
+    clr.l   -(sp)
+    move.w  #$20,-(sp)
+    trap    #1
+    addq.l  #6,sp
+    move.b  #0,IERA
+    move.b  #0,IERB
+    move.l  $44e.w,a0
+    move.w  #(32000/4)-1,d0
+    moveq   #0,d1
+.clr:
+    move.l  d1,(a0)+
+    dbf     d0,.clr
+    clr.w   cofs
+    move.l  #vbl,$70.w
+main:
+    stop    #$2300
+    bra.s   main
+
+vbl:
+    move.w  #$2700,sr
+    movem.l d0-d3/a1,-(sp)
+    move.w  cofs,d3              ; scroll offset (lines)
+    add.w   #%6,d3               ; += speed
+    cmp.w   #%2,d3               ; wrap at total lines
+    blt.s   .now
+    sub.w   #%2,d3
+.now:
+    move.w  d3,cofs
+    move.w  #%1,d0               ; delay: VBL -> first visible line
+.d: dbf     d0,.d
+    lea     coltab(pc),a1
+    add.w   d3,d3                ; offset*2 (word table)
+    adda.w  d3,a1                ; a1 = coltab + offset*2
+    move.w  #%3,d2               ; total-1
+.line:
+    move.w  (a1)+,PAL0
+    move.w  #%4,d1               ; pad => %5 cyc/line
+.p: dbf     d1,.p
+    dbf     d2,.line
+    movem.l (sp)+,d0-d3/a1
+    rte
+
+    even
+cofs: dc.w 0
+    even
+coltab:
+%7)")
+        .arg(kDefaultDelay)   // %1
+        .arg(total)           // %2 (wrap; appears twice)
+        .arg(total - 1)       // %3
+        .arg(kDefaultPad)     // %4
+        .arg(kCycPerLine)     // %5
+        .arg(speed)           // %6
+        .arg(tab);            // %7
+}
+
+QString generateColourCycle(const QVector<quint16> &coloursIn)
+{
+    // 16 palette entries (pad/wrap the authored colours; default to a rainbow).
+    static const quint16 fallback[16] = {0x700, 0x740, 0x770, 0x470, 0x070, 0x074,
+                                          0x077, 0x047, 0x007, 0x407, 0x707, 0x704,
+                                          0x777, 0x333, 0x555, 0x000};
+    quint16 pal[16];
+    for (int i = 0; i < 16; ++i)
+        pal[i] = coloursIn.isEmpty() ? fallback[i]
+                                     : quint16(coloursIn[i % coloursIn.size()] & 0x777);
+
+    // One display line: 20 groups of 16 px, group g uses palette index g&15; each
+    // group is 4 interleaved plane words (plane p full if (index>>p)&1). 80 words.
+    QStringList lineWords;
+    for (int g = 0; g < 20; ++g) {
+        const int idx = g & 15;
+        for (int p = 0; p < 4; ++p)
+            lineWords << QStringLiteral("$%1").arg((idx >> p) & 1 ? 0xffff : 0x0000, 4, 16,
+                                                   QLatin1Char('0'));
+    }
+    QString lineData;
+    for (int i = 0; i < lineWords.size(); i += 10)
+        lineData += QStringLiteral("\tdc.w\t")
+                    + QStringList(lineWords.mid(i, 10)).join(QLatin1Char(',')) + QLatin1Char('\n');
+
+    QStringList palWords;
+    for (int i = 0; i < 16; ++i)
+        palWords << QStringLiteral("$%1").arg(pal[i], 4, 16, QLatin1Char('0'));
+
+    return QStringLiteral(R"(; cycle.s — Talos generated palette colour-cycling (F-212). Do not hand-edit.
+IERA    equ $fffffa07
+IERB    equ $fffffa09
+PALBASE equ $ffff8240
+    text
+start:
+    clr.l   -(sp)
+    move.w  #$20,-(sp)
+    trap    #1
+    addq.l  #6,sp
+    move.b  #0,IERA
+    move.b  #0,IERB
+    move.l  $44e.w,a0            ; fill 200 lines with the 16-index stripe ramp
+    move.w  #199,d2
+.fl:
+    lea     linedat(pc),a1
+    moveq   #80-1,d0
+.cp:
+    move.w  (a1)+,(a0)+
+    dbf     d0,.cp
+    dbf     d2,.fl
+    lea     pal(pc),a1           ; load the 16 palette registers
+    lea     PALBASE,a0
+    moveq   #15,d0
+.sp:
+    move.w  (a1)+,(a0)+
+    dbf     d0,.sp
+    move.l  #vbl,$70.w
+main:
+    stop    #$2300
+    bra.s   main
+
+vbl:
+    movem.l d0-d1/a0,-(sp)       ; rotate the palette one step each frame
+    lea     PALBASE,a0
+    move.w  (a0),d0              ; save colour 0
+    moveq   #14,d1
+.rot:
+    move.w  2(a0),(a0)+          ; pal[i] = pal[i+1]
+    dbf     d1,.rot
+    move.w  d0,(a0)              ; pal[15] = old colour 0
+    movem.l (sp)+,d0-d1/a0
+    rte
+
+    even
+linedat:
+%1
+    even
+pal:
+    dc.w    %2
+)")
+        .arg(lineData)                          // %1
+        .arg(palWords.join(QLatin1Char(',')));  // %2
+}
+
 // Wrap an HBL-handler body in the MFP-off, screen-cleared, HBL-synced prologue.
 static QString hblWrap(const QString &body)
 {

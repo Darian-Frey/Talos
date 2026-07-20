@@ -21,7 +21,7 @@ Append-only. Feature IDs (F-NNN) continue the Talos numbering established in `At
 - **F-208** Blitter memory-traffic visualisation. *(B2)*
 - **F-209** DMA sound buffer-drain + LMC1992 EQ-curve visualisation. *(B2)*
 - **F-210** Mega STE dual-speed (8/16 MHz) demonstration: toggle the CPU speed and watch whether a raster effect holds or breaks as the per-line cycle budget changes. Scope: the two global speed settings only, *not* intra-setting cache/bus bimodality, which Hatari does not model (see C-005, BUG-008).
-- **F-211** Effect prototyping workspace (raster bars, Spectrum 512, hardware scrollers).
+- **F-211** Effect prototyping workspace (raster bars, Spectrum 512, hardware scrollers). Raster workspace extended (Phase 6) with two animated effects — **copper bars** (`generateCopper`: the static per-line colour table with a per-VBL scrolling offset over a doubled table, reusing the proven timing) and **palette colour-cycling** (`generateColourCycle`: a 16-index stripe ramp with the palette rotated each VBL) — plus one-click **pattern generators** (gradient / rainbow / mirror). Animated stubs verified by `harness/anim_check.py` (frames animate; copper scrolls) and in the corpus.
 - **F-212** Export effect as register sequence / asm stub; "verify on Hatari" round-trip.
 - **F-213** Per-scanline framebuffer diff harness against stock Hatari (validation / regression).
 - **F-214** Connection / session manager: launch or attach to the Hatari fork, negotiate protocol version and per-tap capabilities, degrade gracefully when a B2 tap is absent.

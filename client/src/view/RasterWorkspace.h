@@ -15,6 +15,7 @@
 class QTableWidget;
 class QLabel;
 class QComboBox;
+class QSpinBox;
 
 class RasterWorkspace : public QWidget
 {
@@ -22,10 +23,13 @@ class RasterWorkspace : public QWidget
 public:
     explicit RasterWorkspace(QWidget *parent = nullptr);
 
-    enum Mode { Bars = 0, Bands = 1 };       // horizontal raster bars / vertical intra-line bands
+    // horizontal raster bars / vertical intra-line bands / animated copper bars /
+    // palette colour-cycling.
+    enum Mode { Bars = 0, Bands = 1, Copper = 2, Cycle = 3 };
     Mode mode() const;
+    int copperSpeed() const;                 // px/frame for the Copper mode
     QVector<RasterCodegen::Bar> bars() const;
-    QVector<quint16> colours() const;        // colour column in row order (Bands mode)
+    QVector<quint16> colours() const;        // colour column in row order (Bands/Cycle)
     QVector<RasterCodegen::Bar> columnBars() const;   // (column, colour) sorted (Bands mode)
     // Click-to-place from the framebuffer: `line` is a visible scanline index
     // (Bars), `column` is a framebuffer image column (Bands).
@@ -47,8 +51,10 @@ signals:
 private:
     void addBar(int line, quint16 colour);
     void recolourRow(int row, int col);   // matches QTableWidget::cellChanged
+    void fillPattern(int which);          // 0 gradient, 1 rainbow, 2 mirror
 
-    QComboBox *m_mode = nullptr;    // Bars / Bands
+    QComboBox *m_mode = nullptr;    // Bars / Bands / Copper / Cycle
+    QSpinBox *m_speed = nullptr;    // Copper scroll speed (px/frame)
     QTableWidget *m_table = nullptr;
     QLabel *m_result = nullptr;
     QWidget *m_actions = nullptr;   // the button row (disabled while busy)

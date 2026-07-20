@@ -2,11 +2,15 @@
 
 #include <algorithm>
 
+#include <QColor>
 #include <QComboBox>
 #include <QHBoxLayout>
+#include <QMap>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -28,13 +32,35 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(6, 6, 6, 6);
 
+    auto *modeRow = new QHBoxLayout;
     m_mode = new QComboBox(this);
     m_mode->addItem(QStringLiteral("Raster bars (horizontal, per-line)"), Bars);
     m_mode->addItem(QStringLiteral("Vertical bands (intra-line, HBL-synced)"), Bands);
+    m_mode->addItem(QStringLiteral("Copper bars (animated, scrolling)"), Copper);
+    m_mode->addItem(QStringLiteral("Colour cycle (palette rotation)"), Cycle);
     m_mode->setToolTip(QStringLiteral(
-        "Bars: colour per scanline (F-212 per-line). "
-        "Bands: colours packed across each line -> vertical bands (Spectrum-512-lite)."));
-    lay->addWidget(m_mode);
+        "Bars: colour per scanline. Bands: colours packed across each line. "
+        "Copper: the bars scroll down each frame. Colour cycle: rotate the palette."));
+    modeRow->addWidget(m_mode, 1);
+    // Fill the bar table with a ready-made pattern (Bars / Copper modes).
+    auto *patterns = new QPushButton(QStringLiteral("Fill ▾"), this);
+    auto *pmenu = new QMenu(patterns);
+    pmenu->addAction(QStringLiteral("Gradient"), this, [this] { fillPattern(0); });
+    pmenu->addAction(QStringLiteral("Rainbow"), this, [this] { fillPattern(1); });
+    pmenu->addAction(QStringLiteral("Mirror current"), this, [this] { fillPattern(2); });
+    patterns->setMenu(pmenu);
+    patterns->setToolTip(QStringLiteral("Fill the bar table with a gradient / rainbow, "
+                                        "or mirror the current bars about the centre"));
+    modeRow->addWidget(patterns);
+    m_speed = new QSpinBox(this);
+    m_speed->setRange(1, 8);
+    m_speed->setValue(RasterCodegen::kDefaultCopperSpeed);
+    m_speed->setPrefix(QStringLiteral("scroll "));
+    m_speed->setSuffix(QStringLiteral(" px/f"));
+    m_speed->setToolTip(QStringLiteral("Copper-bar scroll speed (pixels per frame)"));
+    m_speed->setVisible(false);   // shown only in Copper mode
+    modeRow->addWidget(m_speed);
+    lay->addLayout(modeRow);
 
     m_table = new QTableWidget(0, 2, this);
     m_table->setHorizontalHeaderLabels({QStringLiteral("Scanline"), QStringLiteral("Colour $0rgb")});
@@ -93,15 +119,25 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     // In Bands mode the scanline column is ignored (row order = left-to-right
     // bands); reflect that in the header and offer a hint.
     connect(m_mode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) {
-        const bool bands = mode() == Bands;
+        const Mode m = mode();
+        const bool bands = m == Bands;
         m_table->setHorizontalHeaderLabels(
-            {bands ? QStringLiteral("Column (0–831)") : QStringLiteral("Scanline"),
+            {bands ? QStringLiteral("Column (0–831)")
+                   : (m == Cycle ? QStringLiteral("Index (order)") : QStringLiteral("Scanline")),
              QStringLiteral("Colour $0rgb")});
-        setResult(bands ? QStringLiteral("Bands mode: colour begins at its column; the "
-                                         "lowest-column colour fills from the left. Click the "
-                                         "frame to place bands (max %1).").arg(RasterCodegen::kMaxBands)
-                        : QString(),
-                  true);
+        m_speed->setVisible(m == Copper);
+        QString hint;
+        if (bands)
+            hint = QStringLiteral("Bands mode: colour begins at its column; the lowest-column "
+                                  "colour fills from the left. Click the frame to place bands "
+                                  "(max %1).").arg(RasterCodegen::kMaxBands);
+        else if (m == Copper)
+            hint = QStringLiteral("Copper mode: the bars (as in Bars) scroll down every frame — "
+                                  "set the scroll speed, then Build.");
+        else if (m == Cycle)
+            hint = QStringLiteral("Colour-cycle mode: the colour column (up to 16, top-to-bottom) "
+                                  "becomes the palette; it rotates every frame over a stripe ramp.");
+        setResult(hint, true);
         emit contentChanged();
     });
 
@@ -114,6 +150,57 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
 RasterWorkspace::Mode RasterWorkspace::mode() const
 {
     return static_cast<Mode>(m_mode->currentData().toInt());
+}
+
+int RasterWorkspace::copperSpeed() const
+{
+    return m_speed->value();
+}
+
+void RasterWorkspace::fillPattern(int which)
+{
+    auto clamp = [](int n) { return qBound(0, n, 7); };
+    if (which == 2) {   // mirror the current bars about the centre
+        const auto cur = bars();
+        if (cur.isEmpty()) {
+            setResult(QStringLiteral("Add some bars first to mirror."), false);
+            return;
+        }
+        QMap<int, quint16> byLine;
+        for (const auto &b : cur)
+            byLine[b.line] = b.colour;
+        for (const auto &b : cur) {
+            const int m = RasterCodegen::kVisibleLines - 1 - b.line;
+            if (m >= 0 && !byLine.contains(m))
+                byLine[m] = b.colour;
+        }
+        m_table->setRowCount(0);
+        for (auto it = byLine.constBegin(); it != byLine.constEnd(); ++it)
+            addBar(it.key(), it.value());
+        setResult(QStringLiteral("Mirrored to %1 bars.").arg(byLine.size()), true);
+        emit contentChanged();
+        return;
+    }
+    const int N = 16;
+    m_table->setRowCount(0);
+    for (int i = 0; i < N; ++i) {
+        const int line = i * RasterCodegen::kVisibleLines / N;
+        quint16 c;
+        if (which == 0) {   // gradient: deep blue -> warm white
+            const double t = double(i) / (N - 1);
+            auto lerp = [&](int a, int b) { return clamp(qRound(a + (b - a) * t)); };
+            c = quint16((lerp(0, 7) << 8) | (lerp(0, 7) << 4) | lerp(6, 7));
+        } else {            // rainbow: hue sweep
+            const QColor h = QColor::fromHsvF(double(i) / N, 1.0, 1.0);
+            c = quint16(((h.red() * 7 / 255) << 8) | ((h.green() * 7 / 255) << 4)
+                        | (h.blue() * 7 / 255));
+        }
+        addBar(line, c);
+    }
+    setResult(QStringLiteral("Filled a %1 — Build to preview.")
+                  .arg(which == 0 ? QStringLiteral("gradient") : QStringLiteral("rainbow")),
+              true);
+    emit contentChanged();
 }
 
 QVector<quint16> RasterWorkspace::colours() const
