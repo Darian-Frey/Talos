@@ -33,13 +33,20 @@ QString generate(QVector<Bar> bars, int pad = kDefaultPad, int delay = kDefaultD
 // frame. Reuses generate()'s proven per-line timing (a doubled colour table means
 // no per-line wrap); only the a1 base is animated. speed 1 = smoothest.
 constexpr int kDefaultCopperSpeed = 1;
-QString generateCopper(QVector<Bar> bars, int speed = kDefaultCopperSpeed);
+// bounce = false: bars scroll down and wrap. bounce = true: the offset follows a
+// sine (256-entry LUT stepped by `speed` each frame) so the bars oscillate up and
+// down smoothly.
+QString generateCopper(QVector<Bar> bars, int speed = kDefaultCopperSpeed,
+                       bool bounce = false);
 
 // Palette colour-cycling: fill the screen with a 16-index horizontal stripe ramp,
 // set the 16 palette registers to `colours`, and rotate them every VBL so the
 // colours flow across the stripes. No cycle-exact timing (palette writes happen
 // in the VBL), so it is timing-forgiving. Up to 16 colours (padded/wrapped).
-QString generateColourCycle(const QVector<quint16> &colours);
+// perColumn = false: vertical stripes (index by column) → each row cycles across.
+// perColumn = true: horizontal bands (index by scanline) → each column cycles
+// vertically (a downward colour waterfall).
+QString generateColourCycle(const QVector<quint16> &colours, bool perColumn = false);
 
 // Intra-line "vertical bands" (Spectrum-512-lite): an HBL-synced handler that
 // packs one background-colour write per band, back to back, so each lands ~one

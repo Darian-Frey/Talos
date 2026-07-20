@@ -1364,8 +1364,13 @@ QString MainWindow::rasterAsmForMode(const QVector<RasterCodegen::Bar> &bars,
     case RasterWorkspace::Copper:
         return bars.isEmpty() ? QString()
                               : RasterCodegen::generateCopper(bars, m_raster->copperSpeed());
+    case RasterWorkspace::CopperBounce:
+        return bars.isEmpty() ? QString()
+                              : RasterCodegen::generateCopper(bars, m_raster->copperSpeed(), true);
     case RasterWorkspace::Cycle:
         return cols.isEmpty() ? QString() : RasterCodegen::generateColourCycle(cols);
+    case RasterWorkspace::CycleColumn:
+        return cols.isEmpty() ? QString() : RasterCodegen::generateColourCycle(cols, true);
     }
     return QString();
 }
@@ -1457,7 +1462,9 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         return;
     }
     const QString repo = repoRootFrom(m_config.hatari.hatariBinary);
-    const bool animated = (mode == RasterWorkspace::Copper || mode == RasterWorkspace::Cycle);
+    const bool copperLike = (mode == RasterWorkspace::Copper || mode == RasterWorkspace::CopperBounce);
+    const bool animated = copperLike || mode == RasterWorkspace::Cycle
+                          || mode == RasterWorkspace::CycleColumn;
 
     QStringList args;
     QString okMsg;
@@ -1483,9 +1490,9 @@ void MainWindow::verifyRasterEffect(const QVector<RasterCodegen::Bar> &bars)
         args = {tool, QStringLiteral("--hatari"), m_config.hatari.hatariBinary,
                 QStringLiteral("--tos"), m_config.hatari.tosImage,
                 QStringLiteral("--asm"), srcPath, QStringLiteral("--mode"),
-                mode == RasterWorkspace::Copper ? QStringLiteral("copper") : QStringLiteral("cycle")};
-        okMsg = mode == RasterWorkspace::Copper
-                    ? QStringLiteral("Verified ✓ — the copper bars scroll each frame")
+                copperLike ? QStringLiteral("copper") : QStringLiteral("cycle")};
+        okMsg = copperLike
+                    ? QStringLiteral("Verified ✓ — the copper bars animate each frame")
                     : QStringLiteral("Verified ✓ — the palette cycles each frame");
     } else {
         const bool bands = mode == RasterWorkspace::Bands;

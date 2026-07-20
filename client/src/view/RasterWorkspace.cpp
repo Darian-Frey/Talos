@@ -37,7 +37,9 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
     m_mode->addItem(QStringLiteral("Raster bars (horizontal, per-line)"), Bars);
     m_mode->addItem(QStringLiteral("Vertical bands (intra-line, HBL-synced)"), Bands);
     m_mode->addItem(QStringLiteral("Copper bars (animated, scrolling)"), Copper);
-    m_mode->addItem(QStringLiteral("Colour cycle (palette rotation)"), Cycle);
+    m_mode->addItem(QStringLiteral("Copper bars (animated, bouncing)"), CopperBounce);
+    m_mode->addItem(QStringLiteral("Colour cycle (per-row, horizontal)"), Cycle);
+    m_mode->addItem(QStringLiteral("Colour cycle (per-column, vertical)"), CycleColumn);
     m_mode->setToolTip(QStringLiteral(
         "Bars: colour per scanline. Bands: colours packed across each line. "
         "Copper: the bars scroll down each frame. Colour cycle: rotate the palette."));
@@ -125,18 +127,25 @@ RasterWorkspace::RasterWorkspace(QWidget *parent)
             {bands ? QStringLiteral("Column (0–831)")
                    : (m == Cycle ? QStringLiteral("Index (order)") : QStringLiteral("Scanline")),
              QStringLiteral("Colour $0rgb")});
-        m_speed->setVisible(m == Copper);
+        m_speed->setVisible(m == Copper || m == CopperBounce);
         QString hint;
         if (bands)
             hint = QStringLiteral("Bands mode: colour begins at its column; the lowest-column "
                                   "colour fills from the left. Click the frame to place bands "
                                   "(max %1).").arg(RasterCodegen::kMaxBands);
         else if (m == Copper)
-            hint = QStringLiteral("Copper mode: the bars (as in Bars) scroll down every frame — "
-                                  "set the scroll speed, then Build.");
+            hint = QStringLiteral("Copper mode: the bars scroll down every frame — set the "
+                                  "speed, then Build.");
+        else if (m == CopperBounce)
+            hint = QStringLiteral("Bouncing copper: the bars oscillate up and down (a sine) — "
+                                  "speed sets how fast, then Build.");
         else if (m == Cycle)
-            hint = QStringLiteral("Colour-cycle mode: the colour column (up to 16, top-to-bottom) "
-                                  "becomes the palette; it rotates every frame over a stripe ramp.");
+            hint = QStringLiteral("Colour cycle (per-row): the colour column (up to 16) becomes "
+                                  "the palette, rotating over vertical stripes — colours flow "
+                                  "sideways.");
+        else if (m == CycleColumn)
+            hint = QStringLiteral("Colour cycle (per-column): the palette rotates over horizontal "
+                                  "bands — colours flow down every column.");
         setResult(hint, true);
         emit contentChanged();
     });
@@ -297,12 +306,13 @@ void RasterWorkspace::placeFromClick(int line, int column)
     // Cycle a default colour so successive clicks are visually distinct.
     static const quint16 pal[] = {0x700, 0x070, 0x007, 0x770, 0x707, 0x077, 0x777};
     const quint16 c = pal[m_table->rowCount() % 7];
-    if (mode() == Bars) {
-        addBar(qBound(0, line, RasterCodegen::kVisibleLines - 1), c);
-    } else {
+    if (mode() == Bands) {
         // Bands: place a colour boundary at the clicked column (arbitrary-column
         // codegen). Column is stored in the Scanline cell as the target.
         addBar(qBound(0, column, 831), c);
+    } else {
+        // Bars / Copper / Cycle: a scanline row (Cycle ignores the line, uses colour).
+        addBar(qBound(0, line, RasterCodegen::kVisibleLines - 1), c);
     }
 }
 

@@ -23,9 +23,9 @@ class RasterWorkspace : public QWidget
 public:
     explicit RasterWorkspace(QWidget *parent = nullptr);
 
-    // horizontal raster bars / vertical intra-line bands / animated copper bars /
-    // palette colour-cycling.
-    enum Mode { Bars = 0, Bands = 1, Copper = 2, Cycle = 3 };
+    // horizontal raster bars / vertical intra-line bands / animated copper bars
+    // (scroll + bounce) / palette colour-cycling (per-row + per-column).
+    enum Mode { Bars = 0, Bands = 1, Copper = 2, Cycle = 3, CopperBounce = 4, CycleColumn = 5 };
     Mode mode() const;
     int copperSpeed() const;                 // px/frame for the Copper mode
     QVector<RasterCodegen::Bar> bars() const;

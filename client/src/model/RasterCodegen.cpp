@@ -1,6 +1,7 @@
 #include "RasterCodegen.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace RasterCodegen {
 
@@ -73,7 +74,7 @@ QString generate(QVector<Bar> bars, int pad, int delay, int total)
         .arg(tab);
 }
 
-QString generateCopper(QVector<Bar> bars, int speed)
+QString generateCopper(QVector<Bar> bars, int speed, bool bounce)
 {
     if (speed < 1)
         speed = 1;
@@ -93,6 +94,41 @@ QString generateCopper(QVector<Bar> bars, int speed)
         for (int j = 0; j < 8 && i + j < total * 2; ++j)
             row << QStringLiteral("$%1").arg(colours[(i + j) % total], 3, 16, QLatin1Char('0'));
         tab += QStringLiteral("\tdc.w\t") + row.join(QLatin1Char(',')) + QLatin1Char('\n');
+    }
+
+    // The VBL computes the frame's colour offset (d3) into the doubled table.
+    QString vblOffset, extraData;
+    if (!bounce) {
+        vblOffset = QStringLiteral(
+            "    move.w  cofs,d3              ; scroll offset (lines)\n"
+            "    add.w   #%1,d3               ; += speed\n"
+            "    cmp.w   #%2,d3               ; wrap at total lines\n"
+            "    blt.s   .now\n"
+            "    sub.w   #%2,d3\n"
+            ".now:\n"
+            "    move.w  d3,cofs\n")
+            .arg(speed).arg(total);
+    } else {
+        // Bounce: a 256-entry sine LUT (offset 0..total-1), stepped by `speed`.
+        vblOffset = QStringLiteral(
+            "    move.w  cofs,d0              ; frame counter\n"
+            "    add.w   #%1,d0\n"
+            "    and.w   #255,d0\n"
+            "    move.w  d0,cofs\n"
+            "    add.w   d0,d0                ; *2 -> word index\n"
+            "    lea     sinetab(pc),a1\n"
+            "    move.w  (a1,d0.w),d3         ; d3 = bounce offset\n")
+            .arg(speed);
+        QStringList sw;
+        for (int i = 0; i < 256; ++i) {
+            const int v = qRound((total - 1) / 2.0 * (1.0 - std::cos(2.0 * M_PI * i / 256.0)));
+            sw << QStringLiteral("$%1").arg(v, 4, 16, QLatin1Char('0'));
+        }
+        QString sd;
+        for (int i = 0; i < 256; i += 8)
+            sd += QStringLiteral("\tdc.w\t")
+                  + QStringList(sw.mid(i, 8)).join(QLatin1Char(',')) + QLatin1Char('\n');
+        extraData = QStringLiteral("    even\nsinetab:\n") + sd;
     }
 
     return QStringLiteral(R"(; copper.s — Talos generated animated raster bars (F-212). Do not hand-edit.
@@ -122,14 +158,7 @@ main:
 vbl:
     move.w  #$2700,sr
     movem.l d0-d3/a1,-(sp)
-    move.w  cofs,d3              ; scroll offset (lines)
-    add.w   #%6,d3               ; += speed
-    cmp.w   #%2,d3               ; wrap at total lines
-    blt.s   .now
-    sub.w   #%2,d3
-.now:
-    move.w  d3,cofs
-    move.w  #%1,d0               ; delay: VBL -> first visible line
+%1    move.w  #%2,d0               ; delay: VBL -> first visible line
 .d: dbf     d0,.d
     lea     coltab(pc),a1
     add.w   d3,d3                ; offset*2 (word table)
@@ -145,19 +174,19 @@ vbl:
 
     even
 cofs: dc.w 0
-    even
+%6    even
 coltab:
 %7)")
-        .arg(kDefaultDelay)   // %1
-        .arg(total)           // %2 (wrap; appears twice)
+        .arg(vblOffset)       // %1
+        .arg(kDefaultDelay)   // %2
         .arg(total - 1)       // %3
         .arg(kDefaultPad)     // %4
         .arg(kCycPerLine)     // %5
-        .arg(speed)           // %6
+        .arg(extraData)       // %6
         .arg(tab);            // %7
 }
 
-QString generateColourCycle(const QVector<quint16> &coloursIn)
+QString generateColourCycle(const QVector<quint16> &coloursIn, bool perColumn)
 {
     // 16 palette entries (pad/wrap the authored colours; default to a rainbow).
     static const quint16 fallback[16] = {0x700, 0x740, 0x770, 0x470, 0x070, 0x074,
@@ -167,24 +196,77 @@ QString generateColourCycle(const QVector<quint16> &coloursIn)
     for (int i = 0; i < 16; ++i)
         pal[i] = coloursIn.isEmpty() ? fallback[i]
                                      : quint16(coloursIn[i % coloursIn.size()] & 0x777);
-
-    // One display line: 20 groups of 16 px, group g uses palette index g&15; each
-    // group is 4 interleaved plane words (plane p full if (index>>p)&1). 80 words.
-    QStringList lineWords;
-    for (int g = 0; g < 20; ++g) {
-        const int idx = g & 15;
-        for (int p = 0; p < 4; ++p)
-            lineWords << QStringLiteral("$%1").arg((idx >> p) & 1 ? 0xffff : 0x0000, 4, 16,
-                                                   QLatin1Char('0'));
-    }
-    QString lineData;
-    for (int i = 0; i < lineWords.size(); i += 10)
-        lineData += QStringLiteral("\tdc.w\t")
-                    + QStringList(lineWords.mid(i, 10)).join(QLatin1Char(',')) + QLatin1Char('\n');
-
     QStringList palWords;
     for (int i = 0; i < 16; ++i)
         palWords << QStringLiteral("$%1").arg(pal[i], 4, 16, QLatin1Char('0'));
+
+    // 4 interleaved plane words for a 16 px group of palette index `idx`.
+    auto planeWords = [](int idx) {
+        QStringList w;
+        for (int p = 0; p < 4; ++p)
+            w << QStringLiteral("$%1").arg((idx >> p) & 1 ? 0xffff : 0x0000, 4, 16,
+                                           QLatin1Char('0'));
+        return w;
+    };
+    auto dcw = [](const QStringList &words) {
+        QString s;
+        for (int i = 0; i < words.size(); i += 10)
+            s += QStringLiteral("\tdc.w\t")
+                 + QStringList(words.mid(i, 10)).join(QLatin1Char(',')) + QLatin1Char('\n');
+        return s;
+    };
+
+    QString fillCode, fillData;
+    if (!perColumn) {
+        // Vertical stripes: one line, group g uses index g&15; copied to all 200.
+        QStringList lw;
+        for (int g = 0; g < 20; ++g)
+            lw += planeWords(g & 15);
+        fillData = QStringLiteral("    even\nlinedat:\n") + dcw(lw);
+        fillCode = QStringLiteral(
+            "    move.l  $44e.w,a0            ; fill 200 lines with the stripe ramp\n"
+            "    move.w  #199,d2\n"
+            ".fl:\n"
+            "    lea     linedat(pc),a1\n"
+            "    moveq   #80-1,d0\n"
+            ".cp:\n"
+            "    move.w  (a1)+,(a0)+\n"
+            "    dbf     d0,.cp\n"
+            "    dbf     d2,.fl\n");
+    } else {
+        // Horizontal bands: each scanline is a uniform index (line*16/total); 16
+        // line patterns + a per-scanline band table, so every column cycles.
+        const int total = kVisibleLines;
+        QStringList allPat;
+        for (int c = 0; c < 16; ++c)
+            for (int g = 0; g < 20; ++g)
+                allPat += planeWords(c);
+        QStringList band;
+        for (int line = 0; line < total; ++line)
+            band << QStringLiteral("$%1").arg(line * 16 / total, 2, 16, QLatin1Char('0'));
+        QString bandData;
+        for (int i = 0; i < total; i += 16)
+            bandData += QStringLiteral("\tdc.b\t")
+                        + QStringList(band.mid(i, 16)).join(QLatin1Char(',')) + QLatin1Char('\n');
+        fillData = QStringLiteral("    even\nlinepat:\n") + dcw(allPat)
+                   + QStringLiteral("    even\nbandtab:\n") + bandData;
+        fillCode = QStringLiteral(
+            "    lea     bandtab(pc),a2       ; fill: each line = its band's index\n"
+            "    move.l  $44e.w,a0\n"
+            "    move.w  #%1,d2\n"
+            ".fl:\n"
+            "    moveq   #0,d0\n"
+            "    move.b  (a2)+,d0\n"
+            "    mulu    #160,d0              ; 80 words per line pattern\n"
+            "    lea     linepat(pc),a1\n"
+            "    adda.l  d0,a1\n"
+            "    moveq   #80-1,d1\n"
+            ".cp:\n"
+            "    move.w  (a1)+,(a0)+\n"
+            "    dbf     d1,.cp\n"
+            "    dbf     d2,.fl\n")
+            .arg(total - 1);
+    }
 
     return QStringLiteral(R"(; cycle.s — Talos generated palette colour-cycling (F-212). Do not hand-edit.
 IERA    equ $fffffa07
@@ -198,16 +280,7 @@ start:
     addq.l  #6,sp
     move.b  #0,IERA
     move.b  #0,IERB
-    move.l  $44e.w,a0            ; fill 200 lines with the 16-index stripe ramp
-    move.w  #199,d2
-.fl:
-    lea     linedat(pc),a1
-    moveq   #80-1,d0
-.cp:
-    move.w  (a1)+,(a0)+
-    dbf     d0,.cp
-    dbf     d2,.fl
-    lea     pal(pc),a1           ; load the 16 palette registers
+%1    lea     pal(pc),a1           ; load the 16 palette registers
     lea     PALBASE,a0
     moveq   #15,d0
 .sp:
@@ -230,15 +303,13 @@ vbl:
     movem.l (sp)+,d0-d1/a0
     rte
 
-    even
-linedat:
-%1
-    even
+%2    even
 pal:
-    dc.w    %2
+    dc.w    %3
 )")
-        .arg(lineData)                          // %1
-        .arg(palWords.join(QLatin1Char(',')));  // %2
+        .arg(fillCode)                          // %1
+        .arg(fillData)                          // %2
+        .arg(palWords.join(QLatin1Char(',')));  // %3
 }
 
 // Wrap an HBL-handler body in the MFP-off, screen-cleared, HBL-synced prologue.
