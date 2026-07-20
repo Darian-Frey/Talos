@@ -64,6 +64,11 @@ public:
         MachineType machine = MachineType::ST;      // initial machine
         VideoRegion region = VideoRegion::Pal50;    // initial region
         Language language = Language::English;       // initial language
+        // Whether each was set explicitly on the command line — an explicit arg
+        // overrides the persisted (last-used) selector; otherwise we restore it.
+        bool machineExplicit = false;
+        bool regionExplicit = false;
+        bool languageExplicit = false;
         bool fastBoot = true;                        // fast-forward the effect boot (BUG-007)
     };
 
@@ -90,6 +95,7 @@ private slots:
     void onMachineChanged(int index);
     void onRegionChanged(int index);
     void onMemoryChanged(int index);
+    void persistBootSelectors();   // save machine/RAM/region/language to QSettings
     void onLanguageChanged(int index);
     void onClockChanged(int index);   // Mega STE 8/16 MHz (F-210) -> relaunch
     void onConnected();

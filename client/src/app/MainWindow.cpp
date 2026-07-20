@@ -548,6 +548,31 @@ void MainWindow::buildUi()
     statusBar()->addPermanentWidget(m_posLabel);
     statusBar()->addPermanentWidget(m_connLabel);
 
+    // Restore the last-used boot selectors (unless a CLI arg pinned one). RAM has
+    // no CLI option, so it always restores. Done before the combos are set + wired
+    // so no relaunch fires during construction.
+    {
+        QSettings s;
+        if (!m_config.machineExplicit && s.contains(QStringLiteral("boot/machine"))) {
+            const QString hm = s.value(QStringLiteral("boot/machine")).toString();
+            for (MachineType t : Machines::all())
+                if (Machines::info(t).hatariMachine == hm) { m_machine = t; break; }
+        }
+        if (!m_config.regionExplicit && s.contains(QStringLiteral("boot/region")))
+            m_region = s.value(QStringLiteral("boot/region")).toString() == QLatin1String("ntsc")
+                           ? VideoRegion::Ntsc60 : VideoRegion::Pal50;
+        if (!m_config.languageExplicit && s.contains(QStringLiteral("boot/language"))) {
+            const QString ln = s.value(QStringLiteral("boot/language")).toString();
+            for (Language l : Languages::all())
+                if (Languages::info(l).name == ln) { m_language = l; break; }
+        }
+        const int ram = s.value(QStringLiteral("boot/ram"),
+                                m_memCombo->currentData().toInt()).toInt();
+        const int ri = m_memCombo->findData(ram);
+        if (ri >= 0)
+            m_memCombo->setCurrentIndex(ri);
+    }
+
     // Set the initial selection, then wire the change signals (so no spurious
     // relaunch fires during construction).
     m_machineCombo->setCurrentIndex(Machines::all().indexOf(m_machine));
@@ -670,6 +695,7 @@ void MainWindow::onMachineChanged(int index)
     m_machine = machines[index];
     updateCapabilities();
     updateBudget();      // dual-speed machines get the 16 MHz budget line
+    persistBootSelectors();
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
@@ -680,15 +706,27 @@ void MainWindow::onRegionChanged(int index)
     reconcileRegion();   // a language with no NTSC variant snaps back to PAL
     updateBudget();      // 512 (PAL) vs 508 (NTSC) cycles/line
     updateReconstruct(); // F-218 geometry follows the region
+    persistBootSelectors();
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }
 
 void MainWindow::onMemoryChanged(int)
 {
+    persistBootSelectors();
     // RAM size only takes effect at boot, so a change relaunches the machine.
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
+}
+
+void MainWindow::persistBootSelectors()
+{
+    QSettings s;
+    s.setValue(QStringLiteral("boot/machine"), Machines::info(m_machine).hatariMachine);
+    s.setValue(QStringLiteral("boot/region"),
+               m_region == VideoRegion::Ntsc60 ? QStringLiteral("ntsc") : QStringLiteral("pal"));
+    s.setValue(QStringLiteral("boot/language"), Languages::info(m_language).name);
+    s.setValue(QStringLiteral("boot/ram"), m_memCombo->currentData().toInt());
 }
 
 void MainWindow::onLanguageChanged(int index)
@@ -698,6 +736,7 @@ void MainWindow::onLanguageChanged(int index)
         return;
     m_language = langs[index];
     reconcileRegion();
+    persistBootSelectors();
     if (m_launcher->isRunning() || m_rdb->isConnected())
         relaunch();
 }

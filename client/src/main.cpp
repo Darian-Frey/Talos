@@ -99,7 +99,11 @@ int main(int argc, char *argv[])
     cfg.hatari.headless = parser.isSet(optHeadless);
     cfg.hatari.monoMonitor = parser.isSet(optMono);
     cfg.fastBoot = !parser.isSet(optNoFastBoot);
-    // Seed the initial machine/region from the CLI (the GUI combos take over).
+    // Seed the initial machine/region from the CLI. The GUI combos remember the
+    // last-used value across sessions; an explicitly-passed CLI arg overrides it.
+    cfg.machineExplicit = parser.isSet(optMachine);
+    cfg.regionExplicit = parser.isSet(optRegion);
+    cfg.languageExplicit = parser.isSet(optLanguage);
     for (MachineType t : Machines::all()) {
         if (Machines::info(t).hatariMachine == parser.value(optMachine)) {
             cfg.machine = t;

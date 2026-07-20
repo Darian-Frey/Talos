@@ -147,6 +147,10 @@ continue — or pre-load disk 2 in **drive B** if the demo looks there.
   effect flips sync mode.
 - **Clock** — CPU clock 8/16 MHz. Only meaningful on the dual-speed **Mega STE**
   (F-210); disabled otherwise.
+
+  *Machine, RAM, Region and Language are **remembered across sessions** — Talos
+  starts up with your last selection. An explicit `--machine` / `--region` /
+  `--language` on the command line overrides the remembered value for that run.*
 - **Launch** (or **Connect** with `--attach`) — start Hatari + connect.
 - **Stop** — stop the running machine and disconnect.
 
