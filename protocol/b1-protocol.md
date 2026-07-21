@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), reading `src/debug/remotedebug.c` + `src/debug/vars.c` in tattlemuss/hatari @ 9832e006, 2026-07-09.
-> **Last reviewed:** 2026-07-11
-> **Why this status:** Command set and beam-data path verified from source. Exact response payloads (per-command field order) still need a line-by-line read of each handler before the client parser is written.
+> **Last reviewed:** 2026-07-21
+> **Why this status:** Command set and beam-data path verified from source. B2 extensions `blittrace`/`dmatrace`/`floppy`/`regtrace` documented from the built fork patches; `regtrace` (F-220) resolves the C-004 socket-bandwidth question in the socket's favour.
 
 ---
 
@@ -81,11 +81,12 @@ register-write-to-cycle mapping can be built in **pure B1** — stop/step, read
 register write to its cycle = break on the write (`bp` on the address), read the
 counters. **No fork patch to begin.**
 
-**Where B2 is still required:** a *continuous stream of every register write
-tagged with its cycle while running at full speed*. B1 only surfaces the counters
-when the emulation is stopped, so the live timeline of a whole frame at speed
-needs the register-write tap (B2, ARCHITECTURE §3) + a new packet. Escalate then,
-per D-005 — and measure the socket bandwidth there (C-004, D-004 reversal test).
+**Where B2 was required:** a *stream of every register write tagged with its
+beam position for a whole frame*. B1 only surfaces the counters when the
+emulation is stopped, so a whole-frame timeline needs the register-write tap
+(B2, ARCHITECTURE §3) + a new packet. That tap is now built — `regtrace` below
+(F-220, `patches/0004-*`) — and the C-004 bandwidth question it raised is
+**resolved in the socket's favour**: see the `regtrace` note.
 
 ## B2 extensions (fork patches) — added by Talos
 
@@ -156,6 +157,41 @@ media-change so the program notices.
 The path is the rest of the line (the handler re-joins space-split args, so paths
 with spaces work). Validated end to end 2026-07-19: swapping a bootable disk into
 drive A then cold-resetting boots the swapped disk.
+
+### `regtrace` — whole-frame register-write timeline (F-220, `patches/0004-*`)
+
+Backs the Register timeline view. Records every write to the video/palette/sync/
+scroll register block (`$ff8200-$ff82ff`) with the beam position at the write, so
+the client can plot a whole frame's hardware activity on the (cycle, scanline)
+grid. Same opt-in, off-by-default shape as `blittrace`, so it never perturbs
+emulation (the D-009 diff harness stays valid).
+
+| Form | Effect | Reply |
+|---|---|---|
+| `regtrace on [N]` | enable + clear; cap at `N` entries (hex; 0/absent = full) | `OK` |
+| `regtrace off` | disable | `OK` |
+| `regtrace clear` | clear without disabling | `OK` |
+| `regtrace` | dump accumulated entries | see below |
+| `regtrace <other>` | unknown sub-command | `NG 1` |
+
+Dump reply: `OK` `0x1` `<count:hex>` then, per entry, four `0x1`-separated hex
+tokens — `addr` `scanline` `lineCycle` `value`. `scanline`/`lineCycle` are the
+HBL and `LineCycles` from `Video_GetPosition` at the write (cast through
+`uint16_t`; the client reads them back as `int16_t`). The ring holds up to 65536
+entries; `on [N]` caps a capture below that. Taps: `ioMem.c` `IoMem_bput` /
+`IoMem_wput` / `IoMem_lput`, right after the store, gated on
+`TALOS_IS_VIDEO_REG` (a long write records both halfwords). A word/long write to
+the palette or scroll pair therefore appears as its component register writes.
+
+**C-004 resolved (2026-07-21).** The socket carries this comfortably. A busy
+frame (multi-split Spectrum-512-lite) is ~6260 writes; the dump is ~104–166 KB
+and clears the localhost socket in ~0.1 ms. A pathological continuous 50 fps
+worst case (~10k writes/frame) is ~8.5 MB/s — **0.68 %** of a measured
+~1.2 GB/s localhost TCP ceiling. The client-side parse, not the socket, is the
+only cost worth watching, and the natural model is capture-per-frame (dump one
+frame's writes on demand and scrub), not a continuous stream. The D-004
+single-process reversal is **not** needed; B1-over-socket carries per-frame
+event data with three orders of magnitude of headroom.
 
 ## Function seam noted for the B2 video tap
 

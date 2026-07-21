@@ -34,6 +34,8 @@ class DisasmView;
 class DisasmTracer;
 class MfpView;
 class AbCompareView;
+class RegTimelineView;
+class RegTraceController;
 class Spectrum512View;
 class StPictureView;
 class ScanlineBudgetView;
@@ -183,6 +185,8 @@ private:
     DisasmTracer *m_tracer = nullptr;
     MfpView *m_mfp = nullptr;
     AbCompareView *m_ab = nullptr;
+    RegTimelineView *m_regTimeline = nullptr;
+    RegTraceController *m_regTracer = nullptr;
     QString m_disasmPath;   // scratch file for redirected disasm output
     ScanlineBudgetView *m_budget = nullptr;
     Spectrum512View *m_spectrum = nullptr;

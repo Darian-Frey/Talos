@@ -22,6 +22,8 @@
 #include "model/MfpState.h"
 #include "protocol/MemCodec.h"
 #include "view/AbCompareView.h"
+#include "view/RegTimelineView.h"
+#include "capture/RegTraceController.h"
 #include "model/ScrollerCodegen.h"
 #include "view/LedToolButton.h"
 #include "view/CollapsibleDock.h"
@@ -515,6 +517,33 @@ void MainWindow::buildUi()
     addDockWidget(Qt::BottomDockWidgetArea, abDock);
     tabifyDockWidget(tdock, abDock);
     connect(m_ab, &AbCompareView::compareRequested, this, &MainWindow::compareMachines);
+
+    // Whole-frame register-write timeline (F-220): every $ff82xx write in a frame
+    // plotted on the beam grid, via the patched `regtrace` command (C-004).
+    m_regTracer = new RegTraceController(m_rdb, this);
+    m_regTimeline = new RegTimelineView(this);
+    auto *regDock = new CollapsibleDock(QStringLiteral("Register timeline"), m_regTimeline, this);
+    addDockWidget(Qt::BottomDockWidgetArea, regDock);
+    tabifyDockWidget(tdock, regDock);
+    connect(m_regTimeline, &RegTimelineView::captureRequested, this, [this] {
+        if (!m_rdb->isConnected()) {
+            m_regTimeline->setStatus(QStringLiteral("Connect to a running machine first."), false);
+            return;
+        }
+        if (m_regTracer->isRunning())
+            return;
+        m_actLive->setChecked(false);   // the capture drives run/break itself
+        m_regTimeline->setBusy(true);
+        m_regTracer->captureFrame();
+    });
+    connect(m_regTracer, &RegTraceController::finished, this, [this](bool ok, const QString &reason) {
+        m_regTimeline->setBusy(false);
+        if (ok)
+            m_regTimeline->setEvents(m_regTracer->events(), m_region);
+        else
+            m_regTimeline->setStatus(QStringLiteral("Capture failed — %1").arg(reason), false);
+        refreshRegs();   // the capture stepped the machine; resync the panels
+    });
 
     tdock->raise();   // timeline shown first
 

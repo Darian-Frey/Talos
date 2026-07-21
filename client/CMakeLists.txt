@@ -43,9 +43,11 @@ add_executable(talos
   src/view/DisasmView.cpp
   src/view/MfpView.cpp
   src/view/AbCompareView.cpp
+  src/view/RegTimelineView.cpp
   src/view/CollapsibleDock.cpp
   src/capture/CaptureController.cpp
   src/capture/DisasmTracer.cpp
+  src/capture/RegTraceController.cpp
 )
 
 target_include_directories(talos PRIVATE src)

@@ -1,0 +1,185 @@
+diff --git a/src/debug/remotedebug.c b/src/debug/remotedebug.c
+index 4168e481..7a898e2c 100644
+--- a/src/debug/remotedebug.c
++++ b/src/debug/remotedebug.c
+@@ -44,6 +44,7 @@
+ #include "psg.h"
+ #include "dmaSnd.h"
+ #include "blitter.h"
++#include "ioMem.h"		/* Talos B2 (F-220): register-write trace */
+ #include "profile.h"
+ // For status bar updates
+ #include "screen.h"
+@@ -1250,6 +1251,53 @@ static int RemoteDebug_floppy(int nArgc, char *psArgs[], RemoteDebugState* state
+ 	return 0;
+ }
+ 
++/**
++ * Talos B2 (F-220): per-frame hardware-register-write trace. Same opt-in shape as
++ * blittrace, but taps writes to the video registers ($ff8200-$ff82ff) and stamps
++ * each with its beam position, so the client can plot a whole frame's activity.
++ *
++ *   regtrace on [N]   enable + clear; cap at N entries (hex; 0/absent = full) -> OK
++ *   regtrace off      disable                                                 -> OK
++ *   regtrace clear    clear without disabling                                 -> OK
++ *   regtrace          dump: OK <sep> <count> then per entry:
++ *                     addr <sep> scanline <sep> lineCycle <sep> value (all hex)
++ */
++static int RemoteDebug_regtrace(int nArgc, char *psArgs[], RemoteDebugState* state)
++{
++	if (nArgc >= 2)
++	{
++		if (strcmp(psArgs[1], "on") == 0)
++		{
++			uint32_t limit = 0;
++			if (nArgc >= 3)
++				read_hex32_value(psArgs[2], &limit);
++			RegTrace_SetEnabled(true, limit);
++		}
++		else if (strcmp(psArgs[1], "off") == 0)
++			RegTrace_SetEnabled(false, 0);
++		else if (strcmp(psArgs[1], "clear") == 0)
++			RegTrace_Clear();
++		else
++			return 1;			/* unknown sub-command */
++		send_str(state, "OK");
++		return 0;
++	}
++
++	const REG_TRACE_ENTRY* entries = RegTrace_GetEntries();
++	uint32_t count = RegTrace_GetCount();
++	send_str(state, "OK");
++	send_sep(state);
++	send_hex(state, count);
++	for (uint32_t i = 0; i < count; ++i)
++	{
++		send_sep(state); send_hex(state, entries[i].addr);
++		send_sep(state); send_hex(state, (uint16_t)entries[i].scanline);
++		send_sep(state); send_hex(state, (uint16_t)entries[i].lineCycle);
++		send_sep(state); send_hex(state, entries[i].value);
++	}
++	return 0;
++}
++
+ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_status,	"status"	, true		},
+ 	{ RemoteDebug_break,	"break"		, true		},
+@@ -1275,6 +1323,7 @@ static const rdbcommand_t remoteDebugCommandList[] = {
+ 	{ RemoteDebug_blittrace,"blittrace"	, true		},
+ 	{ RemoteDebug_dmatrace,	"dmatrace"	, true		},
+ 	{ RemoteDebug_floppy,	"floppy"	, true		},
++	{ RemoteDebug_regtrace,	"regtrace"	, true		},
+ 
+ 	/* Terminator */
+ 	{ NULL, NULL }
+diff --git a/src/includes/ioMem.h b/src/includes/ioMem.h
+index 02707347..bcabeca5 100644
+--- a/src/includes/ioMem.h
++++ b/src/includes/ioMem.h
+@@ -25,6 +25,22 @@ extern uae_u8 *IOmemory;
+ extern int nIoMemAccessSize;
+ extern uint32_t IoAccessFullAddress;
+ extern uint32_t IoAccessBaseAddress;
++
++/* Talos B2 (F-220): per-frame hardware-register-write trace. Records writes to
++ * the video/palette/sync/scroll registers ($ff8200-$ff82ff) with their beam
++ * position, so the client can plot a whole frame's hardware activity. Opt-in and
++ * off by default (Add early-returns when off), so it never perturbs emulation. */
++typedef struct {
++	uint32_t	addr;		/* register address */
++	uint16_t	value;		/* value written */
++	int16_t		scanline;	/* HBL at the write */
++	int16_t		lineCycle;	/* LineCycles at the write */
++} REG_TRACE_ENTRY;
++extern void			RegTrace_SetEnabled ( bool on , uint32_t limit );
++extern bool			RegTrace_IsEnabled ( void );
++extern void			RegTrace_Clear ( void );
++extern uint32_t			RegTrace_GetCount ( void );
++extern const REG_TRACE_ENTRY *	RegTrace_GetEntries ( void );
+ extern uint32_t IoAccessCurrentAddress;
+ 
+ extern int	IoAccessInstrCount;
+diff --git a/src/ioMem.c b/src/ioMem.c
+index 1d41d8cf..67e411c3 100644
+--- a/src/ioMem.c
++++ b/src/ioMem.c
+@@ -42,6 +42,7 @@ const char IoMem_fileid[] = "Hatari ioMem.c";
+ #include "scc.h"
+ #include "fdc.h"
+ #include "vme.h"
++#include "video.h"	/* Talos B2 (F-220): Video_GetPosition for the reg-write trace */
+ 
+ 
+ static void (*pInterceptReadTable[0x8000])(void);	/* Table with read access handlers */
+@@ -55,6 +56,44 @@ uint32_t IoAccessCurrentAddress;			/* Current byte address while handling WORD a
+ static int nBusErrorAccesses;				/* Needed to count bus error accesses */
+ 
+ 
++/* --- Talos B2 (F-220): per-frame hardware-register-write trace ------------- */
++/* See ioMem.h. Off by default; RegTrace_Add early-returns when disabled and    */
++/* only writes a host-side buffer, so it never perturbs emulation.              */
++#define REG_TRACE_MAX		65536
++#define TALOS_IS_VIDEO_REG(a)	( ((a) & 0xffff00) == 0x00ff8200 )
++static REG_TRACE_ENTRY	RegTrace[REG_TRACE_MAX];
++static uint32_t		RegTraceCount;
++static uint32_t		RegTraceLimit = REG_TRACE_MAX;
++static bool		RegTraceEnabled;
++
++static void RegTrace_Add ( uint32_t addr , uint16_t value )
++{
++	int frameCyc, hbl, lineCyc;
++	if ( !RegTraceEnabled || RegTraceCount >= RegTraceLimit )
++		return;
++	Video_GetPosition ( &frameCyc , &hbl , &lineCyc );
++	RegTrace[RegTraceCount].addr      = addr;
++	RegTrace[RegTraceCount].value     = value;
++	RegTrace[RegTraceCount].scanline  = (int16_t)hbl;
++	RegTrace[RegTraceCount].lineCycle = (int16_t)lineCyc;
++	RegTraceCount++;
++}
++
++void RegTrace_SetEnabled ( bool on , uint32_t limit )
++{
++	RegTraceEnabled = on;
++	if ( on )
++	{
++		RegTraceCount = 0;			/* fresh capture on enable */
++		RegTraceLimit = ( limit == 0 || limit > REG_TRACE_MAX ) ? REG_TRACE_MAX : limit;
++	}
++}
++bool RegTrace_IsEnabled ( void )		{ return RegTraceEnabled; }
++void RegTrace_Clear ( void )			{ RegTraceCount = 0; }
++uint32_t RegTrace_GetCount ( void )		{ return RegTraceCount; }
++const REG_TRACE_ENTRY *RegTrace_GetEntries ( void )	{ return RegTrace; }
++
++
+ /*
+   Heuristics for better cycle accuracy when "cycle exact mode" is not used
+ 
+@@ -656,6 +695,7 @@ void REGPARAM3 IoMem_bput(uaecptr addr, uae_u32 val)
+ 	nBusErrorAccesses = 0;
+ 
+ 	IoMem[addr] = val;
++	if (TALOS_IS_VIDEO_REG(addr)) RegTrace_Add(addr, val & 0xff);   /* Talos B2 (F-220) */
+ 
+ 	IoAccessCurrentAddress = addr;
+ 	pInterceptWriteTable[addr-0xff8000]();        /* Call handler */
+@@ -712,6 +752,7 @@ void REGPARAM3 IoMem_wput(uaecptr addr, uae_u32 val)
+ 	nBusErrorAccesses = 0;
+ 
+ 	IoMem_WriteWord(addr, val);
++	if (TALOS_IS_VIDEO_REG(addr)) RegTrace_Add(addr, val & 0xffff);   /* Talos B2 (F-220) */
+ 	idx = addr - 0xff8000;
+ 
+ 	IoAccessCurrentAddress = addr;
+@@ -775,6 +816,10 @@ void REGPARAM3 IoMem_lput(uaecptr addr, uae_u32 val)
+ 	nBusErrorAccesses = 0;
+ 
+ 	IoMem_WriteLong(addr, val);
++	if (TALOS_IS_VIDEO_REG(addr)) {                                  /* Talos B2 (F-220): long = 2 words */
++		RegTrace_Add(addr, (val >> 16) & 0xffff);
++		RegTrace_Add(addr + 2, val & 0xffff);
++	}
+ 	idx = addr - 0xff8000;
+ 
+ 	IoAccessCurrentAddress = addr;

@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Design session with Claude (primary architect/auditor); implementation by Claude (implementer) through Phase 4. Hatari facts verified against upstream sources 2026-07-08.
-> **Last reviewed:** 2026-07-15
-> **Why this status:** Client implemented through Phase 4 — M0–M4 realised (live client, machine/region gating, B2 Blitter/DMA/dual-speed views, effect authoring → export → verify incl. the STE hardware scroller), plus F-217 state snapshots. Phase 5 (the from-scratch non-GPL core) is untouched, by design. This document remains the cold-start brief for whoever (AI or human) picks Talos up next.
+> **Last reviewed:** 2026-07-21
+> **Why this status:** Client implemented through Phase 4 — M0–M4 realised (live client, machine/region gating, B2 Blitter/DMA/dual-speed views, effect authoring → export → verify incl. the STE hardware scroller), plus Phase-6 additions: F-217 state snapshots, F-219 load-a-demo, and F-220 the whole-frame register-write timeline (which measured & **resolved C-004** in the socket's favour — D-004 reversal not triggered). Phase 5 (the from-scratch non-GPL core) is untouched, by design. This document remains the cold-start brief for whoever (AI or human) picks Talos up next.
 
 ---
 
@@ -37,7 +37,7 @@ Phase 0 is done: the Hatari fork (hrdb-lineage `debugger-extensions` protocol, T
 - **M2** — machine selector (520/1040 ST, Mega ST, STE, Mega STE), region + language, honest capability gating and the ST↔STE differential (F-205/206/207). Palette view with the STE 4096-colour quirk (C-008).
 - **M3** — B2 trace views: Blitter memory traffic (F-208), DMA sound drain + LMC1992 EQ (F-209), Mega STE 8/16 MHz dual-speed toggle (F-210, scoped per C-005/BUG-008).
 - **M4** — effect authoring workspaces (F-211) with codegen → vasm → run and export / verify / import (F-212): raster bars, vertical bands (Spectrum-512-lite, arbitrary-column via a bench-validated calibration), and the **STE hardware fine-scroll scroller**. Click-to-place authoring from the framebuffer.
-- Plus **F-217** whole-system state snapshots and a fast-boot toggle (BUG-007).
+- Plus **F-217** whole-system state snapshots and a fast-boot toggle (BUG-007), **F-219** load-and-run arbitrary demos/disks, and **F-220** the whole-frame *Register timeline* (every `$ff82xx` write in a frame on the beam grid, via the opt-in `regtrace` tap `patches/0004-*`; this is where **C-004 was measured & resolved** — per-frame event volume fits the socket with ~3 orders of magnitude to spare).
 
 Harnesses in `harness/`: `diff_harness.py` (per-scanline determinism/non-perturbation), `raster_roundtrip.py`, `intraline_split.py`, `scroller_scroll.py`. Fixed defects and by-design limits are in `BUGS.md` (through BUG-009). **Read `git log` and `REGISTERS.md`/`BUGS.md` for the authoritative current state before assuming a feature is or isn't present.**
 
@@ -49,7 +49,7 @@ Harnesses in `harness/`: `diff_harness.py` (per-scanline determinism/non-perturb
 
 ## The traps, stated plainly
 
-- **Socket bandwidth (C-004).** Per-cycle event streams may or may not fit over a socket. Measure it in Phase 1. If it doesn't fit, the answer is single-process shared-memory embedding (D-004 reversal), *not* thinning the data until the visualisation lies.
+- **Socket bandwidth (C-004).** ~~Per-cycle event streams may or may not fit over a socket. Measure it in Phase 1.~~ **Measured & resolved 2026-07-21 in the socket's favour** (F-220 `regtrace`, `patches/0004-*`): a whole-frame register-write dump fits with three orders of magnitude to spare, so the D-004 reversal is *not* triggered. The rule still stands for any *future* stream that is genuinely per-cycle-at-speed (still unmeasured): if one ever can't fit, the answer is single-process shared-memory embedding (D-004 reversal), *not* thinning the data until the visualisation lies.
 - **Fork divergence (C-002).** Every B2 patch widens the gap from mainline Hatari and the rebase cost. Justify each one by a specific feature B1 can't serve. Keep patches surgical.
 - **Mega STE dual-speed (C-005).** 16 MHz cache-resident, 8 MHz on ST-side bus access. Cycle-counting is bimodal; represent both regimes, never an average. This is a *feature* to visualise (F-210), not a nuisance to smooth over.
 - **STE palette quirk (C-008).** LSB of each intensity nibble is stored as the top bit. Get it exactly right; it is a concrete unit test.
@@ -75,7 +75,7 @@ Status as of 2026-07-15 — `git log` / `REGISTERS.md` are authoritative if this
 
 ## Open threads to resolve as you go
 
-- Exact remote-protocol packet set for any *further* B2 taps — the built views (F-208/209/210) settled their own packet needs; a general per-cycle event stream is still undefined and unproven over the socket (C-004; so far the screenshot-poll + register reads have sufficed for the live view, and BUG-009 shows coherent capture is the live-view constraint, not raw bandwidth).
+- Exact remote-protocol packet set for any *further* B2 taps — the built views (F-208/209/210) settled their own packet needs, and F-220 (`regtrace`) added a whole-frame register-write dump that **resolved C-004** for per-frame event volume (fits the socket with ~3 orders of magnitude to spare). A literal *per-cycle* event stream at full speed remains undefined and unmeasured — no built feature needs it, and BUG-009 shows coherent capture, not raw bandwidth, is the live-view constraint.
 - Whether Hatari config generation (F-216) becomes a component genuinely shared with Hermes or stays a private copy — decide when Hermes work begins.
 - Whether the secondary reconstruct-from-registers view (F-218) earns its place, or stays a note.
 - Whether to sweep `ARCHITECTURE.md §3` tap points against source end-to-end (C-003), now that several are confirmed piecemeal.

@@ -255,6 +255,10 @@ Docks can be collapsed and are tabbed together at the bottom (see below).
 - **MFP** — the 68901 timers and interrupt controller, decoded live (§7h).
 - **A/B compare** — the last-built effect on two machines side by side, with a
   per-scanline diff (§7i).
+- **Register timeline** — *every* write to the video/palette/sync/scroll block
+  (`$ff8200-$ff82ff`) across one whole frame, plotted on the (cycle, scanline)
+  beam grid and colour-coded by register class (§7j). Distinct from the
+  **Register-write timeline** above, which follows *one* watched register.
 
 ---
 
@@ -573,6 +577,40 @@ count. A machine-agnostic effect reads *Identical*; a raster effect using STE-on
 bright colours (bit 3 of a gun nibble) shows *all scanlines differ* because a
 plain ST masks those colours darker (the C-008 palette quirk). Talos captures and
 diffs; it emulates nothing.
+
+---
+
+## 7j. Whole-frame register timeline (Register timeline tab — F-220)
+
+Where the **Register-write timeline** (§4, driven by **Capture**) follows *one*
+watched register, this tab shows **every** write to the video/palette/sync/scroll
+block (`$ff8200-$ff82ff`) across a whole frame at once — the shape of how an
+effect drives the hardware, all in one picture.
+
+1. With a machine running (an effect or a loaded demo), open the **Register
+   timeline** tab and press **Capture frame**. (It briefly takes over from Live:
+   the client runs to a VBL, arms the trace for exactly one frame, then reads it
+   back — a fraction of a second.)
+2. The plot is the **beam grid**: X = cycle within the line (0…512 PAL / 508
+   NTSC), Y = scanline (0…312 / 262), with the visible display window shaded. Each
+   write is a mark at the (cycle, scanline) where the beam stood when the CPU wrote
+   it, coloured by **register class**:
+
+   - **Palette** (`$ff8240-$ff825e`) · **Sync** (`$ff820a`) · **Resolution**
+     (`$ff8260`) · **STE scroll** (`$ff8264/5`) · **Line width** (`$ff820f`) ·
+     **Video base/counter** (`$ff8201/03/0d/05-09`) · **Other**.
+
+   The legend lists each class with its per-frame **count**, so a Spectrum-512-lite
+   frame reads as a dense band of palette writes marching down the left edge, a
+   raster effect as one palette write per bar, and a hardware scroller as the STE
+   scroll register ticking once a frame.
+
+This is backed by the opt-in `regtrace` B2 tap (`patches/0004-*`): Hatari records
+each `$ff82xx` write with its beam position into a host-side ring only while the
+capture is armed, so it never perturbs the emulation. A busy frame is ~6000+
+writes and still crosses the socket in well under a millisecond — the built answer
+to the C-004 "does a per-frame event stream fit over the socket?" question (it
+does, with room to spare; see `DECISIONS.md` D-004 / `REGISTERS.md` C-004).
 
 ---
 

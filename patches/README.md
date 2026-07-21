@@ -2,8 +2,8 @@
 
 > **Status:** Active
 > **Provenance:** Claude (implementer), Phase 0 scaffold.
-> **Last reviewed:** 2026-07-19
-> **Why this status:** First B2 patch landed in Phase 3 (`0001`, the Blitter tap). Further patches added only where a feature proves B1 cannot serve it (D-005) — `0003` (runtime floppy swap) is the newest.
+> **Last reviewed:** 2026-07-21
+> **Why this status:** First B2 patch landed in Phase 3 (`0001`, the Blitter tap). Further patches added only where a feature proves B1 cannot serve it (D-005) — `0004` (whole-frame register-write trace, F-220) is the newest and settles the C-004 socket-bandwidth question in the socket's favour.
 
 ---
 
@@ -45,3 +45,13 @@ that (the client's Depth control), and the client flags a truncated capture.
   raises the FDC media-change), so a **multi-disk demo can be fed its next disk at
   runtime without a reboot**. B1 has no way to change a floppy while running
   (D-005), so this is justified; it is surgical (one command, 1 file, +~45 lines).
+
+- **`0004-remote-regtrace.patch`** (F-220) — opt-in whole-frame register-write
+  trace. Taps `IoMem_bput`/`wput`/`lput` (right after the store, gated on the
+  video/palette/sync/scroll block `$ff8200-$ff82ff`) into a host-side ring,
+  recording each write's `addr`/`value` plus the beam position
+  (`Video_GetPosition`) at that write; exposes it over the new `regtrace` command.
+  Off by default, so it never perturbs emulation. Backs the Register timeline
+  view, and **resolves C-004**: a busy frame is ~6260 writes / ~104–166 KB and
+  the worst-case continuous stream is ~0.68 % of the localhost socket ceiling, so
+  the D-004 single-process reversal is not needed. 3 files, +103 lines.

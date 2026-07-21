@@ -26,6 +26,7 @@ Reversal condition: if the fork becomes unmaintained or diverges from mainline H
 **D-004 — Two-process architecture: Hatari as one process, the Talos Qt6 client as another, connected by a socket.**
 Rationale: mirrors hrdb's proven boundary; isolates the Qt6/C++ client from Hatari's SDL/C world; isolates crashes.
 Reversal condition: if per-cycle event volume for the heavy visualisations cannot be sustained over a socket at ST clock rates, move to single-process shared-memory embedding. Measure this in Phase 1.
+Reversal status (2026-07-21): **not triggered.** The first heavy event stream — the whole-frame register-write trace (F-220, `regtrace`, `patches/0004-*`) — was measured against the socket and fits with three orders of magnitude to spare (a busy frame ~6260 writes / ~104–166 KB / ~0.1 ms; pathological continuous worst case ~0.68 % of a ~1.2 GB/s localhost ceiling). The two-process boundary stays. See C-004 for the numbers. Caveat: this proves *per-frame* event volume, captured-and-scrubbed; a literal *per-cycle* stream of every bus event at full speed is still unmeasured and unbuilt — if a feature ever needs it, re-measure at that volume before assuming the boundary holds.
 
 **D-005 — Layered instrumentation: B1 (client over the existing protocol) wherever it suffices; B2 (fork patches + new protocol packets) only per-feature where B1 cannot supply the data.**
 Rationale: minimises the fork's divergence from mainline, keeping it rebasable as Hatari improves.
